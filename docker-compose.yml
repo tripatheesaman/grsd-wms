@@ -1,0 +1,53 @@
+
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: wks_postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - /srv/wks-work-order/postgres-data:/var/lib/postgresql/data
+    networks:
+      - wks_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wks_work_order_management
+    ports:
+      - "3001:3000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - /srv/wks-work-order/uploads:/app/public/uploads:rw
+    networks:
+      - wks_network
+    restart: unless-stopped
+
+# Volumes are now mapped to /srv/wks-work-order
+
+networks:
+  wks_network:
+    driver: bridge 
