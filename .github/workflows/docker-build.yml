@@ -1,0 +1,56 @@
+name: Build & Push (prod)
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Decide tags
+        id: meta
+        run: |
+          # Always tag :latest when building from main
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "TAGS=tripatheesaman/grsd-wms-frontend:latest" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # When building from a tag like v1.0.0, push that tag too
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "TAGS=tripatheesaman/grsd-wms-frontend:${VERSION}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Unsupported ref: ${GITHUB_REF}"
+          exit 1
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.TAGS }}
