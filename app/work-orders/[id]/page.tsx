@@ -7,7 +7,7 @@ import { Button } from '../../components/Button';
 import { useAuth } from '../../components/AuthProvider';
 import { Input } from '../../components/Input';
 import { Card } from '../../components/Card';
-import { apiClient, getApiBaseUrl, toUploadApiUrl } from '../../utils/api';
+import { apiClient, getApiBaseUrl, toPublicUrl } from '../../utils/api';
 import { useToast } from '../../components/ToastContext';
 import { validateAction, validateSparePart, validateFinding, validateCompletionDate } from '../../utils/validation';
 import { WorkOrder, Finding, Action, SparePart, Technician, ActionTechnician, ActionDate, Unit } from '../../types';
@@ -1284,14 +1284,14 @@ export default function WorkOrderDetailPage() {
               {workOrder.reference_document.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
                 <div className="space-y-2">
                   <Image
-                    src={toUploadApiUrl(workOrder.reference_document)}
+                    src={toPublicUrl(workOrder.reference_document)}
                     alt="Reference"
                     width={400}
                     height={300}
                     className="max-w-xs rounded border h-auto w-auto"
                   />
               <a
-                href={toUploadApiUrl(workOrder.reference_document)}
+                href={toPublicUrl(workOrder.reference_document)}
                 target="_blank"
                 rel="noreferrer"
                     className="text-[#08398F] underline text-sm"
@@ -1309,7 +1309,7 @@ export default function WorkOrderDetailPage() {
           </div>
                   </div>
                   <a
-                    href={toUploadApiUrl(workOrder.reference_document)}
+                    href={toPublicUrl(workOrder.reference_document)}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[#08398F] underline text-sm"
@@ -1319,7 +1319,7 @@ export default function WorkOrderDetailPage() {
                 </div>
               ) : (
                 <a
-                  href={toUploadApiUrl(workOrder.reference_document)}
+                  href={toPublicUrl(workOrder.reference_document)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-[#08398F] underline"
@@ -1454,7 +1454,7 @@ export default function WorkOrderDetailPage() {
                 </div>
                 {finding.reference_image && (
                   <Image 
-                    src={toUploadApiUrl(finding.reference_image)} 
+                    src={toPublicUrl(finding.reference_image)} 
                     alt="Reference" 
                     width={200}
                     height={150}
