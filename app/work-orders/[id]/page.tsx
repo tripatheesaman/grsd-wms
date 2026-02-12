@@ -1253,8 +1253,8 @@ export default function WorkOrderDetailPage() {
             <p className="text-gray-900 whitespace-pre-line">{workOrder.description || '—'}</p>
           </div>
         </div>
-
-        <div className="mt-4 pt-4 border-t border-gray-200">
+        
+          <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex justify-between items-center mb-2">
             <span className="font-medium text-gray-700">Reference Document/Image:</span>
             {user && (user.role === 'admin' || user.role === 'superadmin') && (
