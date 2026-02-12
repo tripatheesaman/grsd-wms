@@ -19,19 +19,19 @@ export const TopBar: React.FC = () => {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-white border-b border-gray-200 px-4 lg:px-6">
       <div className="h-full flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Image
+          <div className="flex items-center space-x-3">
+            <Image 
             src={logo}
-            alt="Nepal Airlines Logo"
+              alt="Nepal Airlines Logo" 
             width={32}
             height={32}
-            className="w-8 h-8 object-contain"
-            priority
-            quality={100}
-          />
+              className="w-8 h-8 object-contain"
+              priority
+              quality={100}
+            />
           <h1 className="text-lg sm:text-xl font-semibold text-[#08398F] whitespace-nowrap">
-            Work Order Management
-          </h1>
+              Work Order Management
+            </h1>
         </div>
 
         <div className="flex items-center space-x-3 lg:space-x-4">
