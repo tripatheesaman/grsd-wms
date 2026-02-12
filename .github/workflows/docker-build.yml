@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: name: Build & Push (prod)
+    name: Build & Push (prod)
     runs-on: ubuntu-latest
     permissions:
       contents: read
