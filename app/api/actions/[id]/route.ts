@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/database';
 import { Action, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { toPastTenseText } from '@/app/utils/textFormat';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -50,7 +51,7 @@ export async function PUT(
           SET description = $1, action_date = $2, start_time = $3, end_time = $4, remarks = $5, updated_at = CURRENT_TIMESTAMP
           WHERE id = $6
           RETURNING *
-        `, [description, action_date, startTimestamp, endTimestamp, remarks || null, actionId]);
+        `, [toPastTenseText((description ?? '').toString()), action_date, startTimestamp, endTimestamp, remarks ? toPastTenseText(remarks) : null, actionId]);
         if (result.rows.length === 0) {
           return NextResponse.json<ApiResponse<null>>({
             success: false,

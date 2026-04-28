@@ -11,6 +11,7 @@ import { useToast } from '../../components/ToastContext';
 import { validateWorkOrder, validateFileSize, validateFileType } from '../../utils/validation';
 import { WorkOrder } from '../../types';
 import { WORK_TYPES } from '../../utils/workTypes';
+import { toPresentTenseTextLive } from '../../utils/textFormat';
 
 interface CreateWorkOrderForm {
   work_order_no: string;
@@ -222,9 +223,14 @@ export default function CreateWorkOrderPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    const normalizedValue = name === 'requested_by'
+      ? value.toUpperCase()
+      : name === 'description'
+        ? toPresentTenseTextLive(value)
+        : value;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: normalizedValue
     }));
     if (errors[name as keyof CreateWorkOrderForm]) {
       setErrors(prev => ({
@@ -233,7 +239,7 @@ export default function CreateWorkOrderPage() {
       }));
     }
 
-    if (name === 'work_type' && value !== 'Others') {
+    if (name === 'work_type' && normalizedValue !== 'Others') {
       setFormData(prev => ({
         ...prev,
         work_type_other: undefined
@@ -313,6 +319,9 @@ export default function CreateWorkOrderPage() {
               onChange={handleChange}
               error={errors.requested_by}
               placeholder="Enter requester name"
+              autoCorrect="on"
+              autoCapitalize="characters"
+              spellCheck
               required
             />
 
@@ -355,17 +364,20 @@ export default function CreateWorkOrderPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Work Description <span className="text-red-500">*</span>
+              What problem was reported? <span className="text-red-500">*</span>
             </label>
             <textarea
               name="description"
               value={formData.description}
               onChange={handleChange}
-              placeholder="Describe the work to be performed"
+              placeholder="Describe the reported problem"
               className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#08398F] focus:border-[#08398F]"
+              autoCorrect="on"
+              autoCapitalize="sentences"
+              spellCheck
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Provide enough detail to help during approval and execution.</p>
+            <p className="text-xs text-gray-500 mt-1">Autocorrect and spell check are enabled to help keep the sentence clear.</p>
           </div>
 
           <Input

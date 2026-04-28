@@ -74,6 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     ] : []),    
     ...(user && (user.role === 'superadmin') ? [
       { href: '/users', label: 'Users', icon: '👤' },
+      { href: '/email-settings', label: 'Email Settings', icon: '📧' },
 
     ] : []),
   ];

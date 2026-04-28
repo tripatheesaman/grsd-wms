@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../lib/database';
 import { WorkOrder, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { toPresentTenseText, toUpperNormalized } from '@/app/utils/textFormat';
 
 export async function POST(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'user');
@@ -54,11 +55,11 @@ export async function POST(request: NextRequest) {
         work_order_date,
         equipment_number,
         km_hrs,
-        requested_by,
+        toUpperNormalized((requested_by ?? '').toString()),
         auth.user.userId,
         work_type,
         job_allocation_time,
-        (description ?? '').toString().trim(),
+        toPresentTenseText((description ?? '').toString()),
         reference_document || null,
         'pending'
       ]);

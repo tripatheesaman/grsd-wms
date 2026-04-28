@@ -18,11 +18,12 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Invalid IDs' }, { status: 400 });
     }
     const body = await request.json();
-    const { action_date, start_time, end_time, is_completed } = body as {
+    const { action_date, start_time, end_time, is_completed, technician_ids } = body as {
       action_date?: string;
       start_time?: string;
       end_time?: string | null;
       is_completed?: boolean;
+      technician_ids?: number[];
     };
   const fields: string[] = [];
     const values: unknown[] = [];
@@ -37,6 +38,18 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS action_date_technicians (
+          id SERIAL PRIMARY KEY,
+          action_date_id INTEGER NOT NULL REFERENCES action_dates(id) ON DELETE CASCADE,
+          technician_id INTEGER REFERENCES technicians(id) ON DELETE SET NULL,
+          name VARCHAR(255) NOT NULL,
+          staff_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(action_date_id, staff_id)
+        )
+      `);
+
       if (is_completed === false) {
         const existing = await client.query('SELECT is_completed FROM action_dates WHERE id = $1 AND action_id = $2', [actionDateId, actionId]);
         if (existing.rows.length === 0) {
@@ -71,6 +84,26 @@ export async function PUT(
       const result = await client.query(query, values);
       if (result.rows.length === 0) {
         return NextResponse.json({ success: false, error: 'Action date not found' }, { status: 404 });
+      }
+
+      if (Array.isArray(technician_ids)) {
+        const validTechnicianIds = technician_ids.filter((id): id is number => typeof id === 'number' && id > 0);
+        const techResult = validTechnicianIds.length > 0
+          ? await client.query(
+              `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[])`,
+              [validTechnicianIds]
+            )
+          : { rows: [] as Array<{ id: number; name: string; staff_id: string }> };
+
+        await client.query(`DELETE FROM action_date_technicians WHERE action_date_id = $1`, [actionDateId]);
+        for (const tech of techResult.rows) {
+          await client.query(
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
+            [actionDateId, tech.id, tech.name, tech.staff_id]
+          );
+        }
       }
       return NextResponse.json({ success: true, data: result.rows[0] });
     } finally {

@@ -4,6 +4,7 @@ import { WorkOrder, ApiResponse } from '../../../types';
 import { requireAuth } from '@/app/api/middleware';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
+import { toUpperNormalized } from '@/app/utils/textFormat';
 
 interface WorkOrderDetail extends WorkOrder {
   completion_approved_by_name?: string;
@@ -207,7 +208,7 @@ export async function PUT(
       if (work_order_date !== undefined) { fields.push(`work_order_date = $${idx++}`); values.push(work_order_date); }
       if (equipment_number !== undefined) { fields.push(`equipment_number = $${idx++}`); values.push(equipment_number); }
       if (km_hrs !== undefined) { fields.push(`km_hrs = $${idx++}`); values.push(km_hrs); }
-      if (requested_by !== undefined) { fields.push(`requested_by = $${idx++}`); values.push(requested_by); }
+      if (requested_by !== undefined) { fields.push(`requested_by = $${idx++}`); values.push(toUpperNormalized((requested_by ?? '').toString())); }
       if (work_type !== undefined) { fields.push(`work_type = $${idx++}`); values.push(work_type); }
       if (job_allocation_time !== undefined) { fields.push(`job_allocation_time = $${idx++}`); values.push(job_allocation_time); }
       if (reference_document !== undefined) { fields.push(`reference_document = $${idx++}`); values.push(reference_document); }

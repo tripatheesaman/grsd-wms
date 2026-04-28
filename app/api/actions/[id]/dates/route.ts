@@ -11,11 +11,55 @@ export async function GET(
   const { id: actionId } = await params;
   const client = await pool.connect();
   try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS action_date_technicians (
+        id SERIAL PRIMARY KEY,
+        action_date_id INTEGER NOT NULL REFERENCES action_dates(id) ON DELETE CASCADE,
+        technician_id INTEGER REFERENCES technicians(id) ON DELETE SET NULL,
+        name VARCHAR(255) NOT NULL,
+        staff_id VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(action_date_id, staff_id)
+      )
+    `);
+
     const result = await client.query(
-      `SELECT id, action_id, action_date, start_time, end_time, is_completed, created_at, updated_at
+      `SELECT ad.id, ad.action_id, ad.action_date, ad.start_time, ad.end_time, ad.is_completed, ad.created_at, ad.updated_at,
+              COALESCE(
+                (
+                  SELECT json_agg(
+                    json_build_object(
+                      'id', tech_rows.id,
+                      'action_id', ad.action_id,
+                      'technician_id', tech_rows.technician_id,
+                      'name', tech_rows.name,
+                      'staff_id', tech_rows.staff_id,
+                      'created_at', tech_rows.created_at
+                    ) ORDER BY tech_rows.created_at ASC
+                  )
+                  FROM (
+                    SELECT adt.id, adt.technician_id, adt.name, adt.staff_id, adt.created_at
+                    FROM action_date_technicians adt
+                    WHERE adt.action_date_id = ad.id
+
+                    UNION ALL
+
+                    SELECT at.id, at.technician_id, at.name, at.staff_id, at.created_at
+                    FROM action_technicians at
+                    WHERE at.action_id = ad.action_id
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM action_date_technicians adt_existing
+                        WHERE adt_existing.action_date_id = ad.id
+                      )
+                  ) AS tech_rows
+                ),
+                '[]'::json
+              ) AS technicians
        FROM action_dates
-       WHERE action_id = $1
-       ORDER BY action_date DESC`,
+       ad
+       WHERE ad.action_id = $1
+       ORDER BY ad.action_date DESC`,
       [actionId]
     );
     return NextResponse.json({
@@ -46,8 +90,9 @@ export async function POST(
       start_time?: string;
       end_time?: string | null;
       is_completed?: boolean;
+      technician_ids?: number[];
     };
-    const { action_date, start_time, is_completed = false, end_time: _end_time = null } = raw;
+    const { action_date, start_time, is_completed = false, end_time: _end_time = null, technician_ids = [] } = raw;
     let end_time = _end_time;
     if (end_time === '') end_time = null;
     if (!action_date || !start_time) {
@@ -72,6 +117,18 @@ export async function POST(
           }, { status: 400 });
         }
       }
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS action_date_technicians (
+          id SERIAL PRIMARY KEY,
+          action_date_id INTEGER NOT NULL REFERENCES action_dates(id) ON DELETE CASCADE,
+          technician_id INTEGER REFERENCES technicians(id) ON DELETE SET NULL,
+          name VARCHAR(255) NOT NULL,
+          staff_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(action_date_id, staff_id)
+        )
+      `);
+
       const insertRes = await client.query(
         `INSERT INTO action_dates (action_id, action_date, start_time, end_time, is_completed)
          VALUES ($1, $2, $3, $4, $5)
@@ -79,6 +136,25 @@ export async function POST(
         [actionId, action_date, start_time, end_time, is_completed]
       );
       const inserted = insertRes.rows[0];
+      const validTechnicianIds = Array.isArray(technician_ids)
+        ? technician_ids.filter((id): id is number => typeof id === 'number' && id > 0)
+        : [];
+
+      if (validTechnicianIds.length > 0) {
+        const techResult = await client.query(
+          `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[])`,
+          [validTechnicianIds]
+        );
+
+        for (const tech of techResult.rows) {
+          await client.query(
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
+            [inserted.id, tech.id, tech.name, tech.staff_id]
+          );
+        }
+      }
       await client.query(
         `UPDATE action_dates SET is_completed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE action_id = $1 AND id != $2`,
         [actionId, inserted.id]
