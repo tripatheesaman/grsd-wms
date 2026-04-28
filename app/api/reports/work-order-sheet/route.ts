@@ -99,13 +99,28 @@ export async function GET(request: NextRequest) {
       `, [workOrderId]);
 
       const techniciansResult = await client.query(`
-        SELECT adt.name, adt.staff_id, ad.action_id, ad.id as action_date_id
-        FROM action_date_technicians adt
-        JOIN action_dates ad ON ad.id = adt.action_date_id
+        SELECT tech_rows.name, tech_rows.staff_id, ad.action_id, ad.id as action_date_id
+        FROM action_dates ad
         JOIN actions a ON a.id = ad.action_id
         JOIN findings f ON f.id = a.finding_id
+        JOIN LATERAL (
+          SELECT adt.name, adt.staff_id, adt.created_at
+          FROM action_date_technicians adt
+          WHERE adt.action_date_id = ad.id
+
+          UNION ALL
+
+          SELECT at.name, at.staff_id, at.created_at
+          FROM action_technicians at
+          WHERE at.action_id = ad.action_id
+            AND NOT EXISTS (
+              SELECT 1
+              FROM action_date_technicians adt_existing
+              WHERE adt_existing.action_date_id = ad.id
+            )
+        ) AS tech_rows ON TRUE
         WHERE f.work_order_id = $1
-        ORDER BY adt.name, adt.staff_id
+        ORDER BY tech_rows.name, tech_rows.staff_id
       `, [workOrderId]);
 
       const templatePath = path.join(process.cwd(), 'public', 'template_file.xlsx');

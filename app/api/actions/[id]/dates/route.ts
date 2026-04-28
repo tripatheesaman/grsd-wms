@@ -29,16 +29,30 @@ export async function GET(
                 (
                   SELECT json_agg(
                     json_build_object(
-                      'id', adt.id,
+                      'id', tech_rows.id,
                       'action_id', ad.action_id,
-                      'technician_id', adt.technician_id,
-                      'name', adt.name,
-                      'staff_id', adt.staff_id,
-                      'created_at', adt.created_at
-                    ) ORDER BY adt.created_at ASC
+                      'technician_id', tech_rows.technician_id,
+                      'name', tech_rows.name,
+                      'staff_id', tech_rows.staff_id,
+                      'created_at', tech_rows.created_at
+                    ) ORDER BY tech_rows.created_at ASC
                   )
-                  FROM action_date_technicians adt
-                  WHERE adt.action_date_id = ad.id
+                  FROM (
+                    SELECT adt.id, adt.technician_id, adt.name, adt.staff_id, adt.created_at
+                    FROM action_date_technicians adt
+                    WHERE adt.action_date_id = ad.id
+
+                    UNION ALL
+
+                    SELECT at.id, at.technician_id, at.name, at.staff_id, at.created_at
+                    FROM action_technicians at
+                    WHERE at.action_id = ad.action_id
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM action_date_technicians adt_existing
+                        WHERE adt_existing.action_date_id = ad.id
+                      )
+                  ) AS tech_rows
                 ),
                 '[]'::json
               ) AS technicians
