@@ -27,9 +27,9 @@ export async function GET(request: NextRequest) {
       const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
       const sql = `
         SELECT 
-          COALESCE(at.technician_id, NULL) AS technician_id,
-          at.name AS name,
-          at.staff_id AS staff_id,
+          tech_rows.technician_id AS technician_id,
+          tech_rows.name AS name,
+          tech_rows.staff_id AS staff_id,
           COUNT(DISTINCT a.id) AS actions_worked,
           SUM(CASE WHEN ad.is_completed THEN 1 ELSE 0 END) AS completed_actions,
           SUM(
@@ -41,9 +41,24 @@ export async function GET(request: NextRequest) {
           )::int AS total_minutes
         FROM actions a
         JOIN action_dates ad ON ad.action_id = a.id
-        JOIN action_technicians at ON at.action_id = a.id
+        JOIN LATERAL (
+          SELECT adt.technician_id, adt.name, adt.staff_id, adt.created_at
+          FROM action_date_technicians adt
+          WHERE adt.action_date_id = ad.id
+
+          UNION ALL
+
+          SELECT at.technician_id, at.name, at.staff_id, at.created_at
+          FROM action_technicians at
+          WHERE at.action_id = a.id
+            AND NOT EXISTS (
+              SELECT 1
+              FROM action_date_technicians adt_existing
+              WHERE adt_existing.action_date_id = ad.id
+            )
+        ) AS tech_rows ON TRUE
         ${whereClause}
-        GROUP BY at.technician_id, at.name, at.staff_id
+        GROUP BY tech_rows.technician_id, tech_rows.name, tech_rows.staff_id
         ORDER BY completed_actions DESC, total_minutes DESC
       `;
       const result = await client.query(sql, params);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../lib/database';
 import { Action, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { toPastTenseText } from '@/app/utils/textFormat';
 export async function POST(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
@@ -15,8 +16,9 @@ export async function POST(request: NextRequest) {
       end_time?: string | null;
       is_completed?: boolean;
       remarks?: string | null;
+      technician_ids?: number[];
     };
-    const { finding_id, description, action_date, start_time, is_completed = false, remarks = null, end_time: _end_time = null } = raw;
+    const { finding_id, description, action_date, start_time, is_completed = false, remarks = null, end_time: _end_time = null, technician_ids = [] } = raw;
     let end_time = _end_time;
     if (end_time === '') end_time = null;
     if (!finding_id || !description || !action_date || !start_time) {
@@ -110,18 +112,19 @@ export async function POST(request: NextRequest) {
       `;
         insertParams = [
           finding_id,
-          description.trim(),
+          toPastTenseText(description),
           action_date,
           startTimestamp,
           endTimestamp,
-          remarks
+          remarks ? toPastTenseText(remarks) : null
         ];
       const result = await client.query(insertSql, insertParams);
       const action = result.rows[0];
-      await client.query(`
+      const actionDateResult = await client.query(`
         INSERT INTO action_dates (
           action_id, action_date, start_time, end_time, is_completed
         ) VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
       `, [
         action.id,
         action_date,
@@ -129,6 +132,37 @@ export async function POST(request: NextRequest) {
         end_time, 
         is_completed
       ]);
+      const actionDateId = actionDateResult.rows[0]?.id;
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS action_date_technicians (
+          id SERIAL PRIMARY KEY,
+          action_date_id INTEGER NOT NULL REFERENCES action_dates(id) ON DELETE CASCADE,
+          technician_id INTEGER REFERENCES technicians(id) ON DELETE SET NULL,
+          name VARCHAR(255) NOT NULL,
+          staff_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(action_date_id, staff_id)
+        )
+      `);
+
+      const validTechnicianIds = Array.isArray(technician_ids)
+        ? technician_ids.filter((id): id is number => typeof id === 'number' && id > 0)
+        : [];
+      if (actionDateId && validTechnicianIds.length > 0) {
+        const techResult = await client.query(
+          `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[])`,
+          [validTechnicianIds]
+        );
+        for (const tech of techResult.rows) {
+          await client.query(
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
+            [actionDateId, tech.id, tech.name, tech.staff_id]
+          );
+        }
+      }
       return NextResponse.json<ApiResponse<Action>>({
         success: true,
         data: action

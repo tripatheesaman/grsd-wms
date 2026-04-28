@@ -4,6 +4,7 @@ import { Finding, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
+import { toPastTenseText } from '@/app/utils/textFormat';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -30,7 +31,7 @@ export async function PUT(
         SET description = $1, reference_image = $2, updated_at = CURRENT_TIMESTAMP
         WHERE id = $3
         RETURNING *
-      `, [description, reference_image || null, findingId]);
+      `, [toPastTenseText((description ?? '').toString()), reference_image || null, findingId]);
       if (result.rows.length === 0) {
         return NextResponse.json<ApiResponse<null>>({
           success: false,

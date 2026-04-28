@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../../lib/database';
 import { WorkOrder, ApiResponse } from '../../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { sendCompletionRequestEmail } from '@/app/lib/email';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,11 +28,16 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      const workOrderQuery = await client.query(`
-        SELECT work_order_date, status 
-        FROM work_orders 
-        WHERE id = $1
-      `, [workOrderId]);
+      const workOrderQuery = await client.query(
+        `
+          SELECT wo.work_order_date, wo.status, wo.work_order_no, wo.requested_by,
+                 u.first_name, u.last_name
+          FROM work_orders wo
+          LEFT JOIN users u ON u.id = wo.requested_by_id
+          WHERE wo.id = $1
+        `,
+        [workOrderId],
+      );
       if (workOrderQuery.rows.length === 0) {
         return NextResponse.json<ApiResponse<null>>({
           success: false,
@@ -125,6 +131,20 @@ export async function PUT(
         RETURNING *
       `, [work_completed_date, auth.user.userId, workOrderId]);
       const updatedWorkOrder = result.rows[0];
+      const origin = new URL(request.url).origin;
+      const requestedByName =
+        [workOrder.first_name, workOrder.last_name].filter(Boolean).join(' ').trim() ||
+        workOrder.requested_by ||
+        auth.user.username;
+      sendCompletionRequestEmail({
+        workOrderId,
+        workOrderNo: workOrder.work_order_no,
+        requestedByName,
+        completionDate: work_completed_date,
+        appBaseUrl: origin,
+      }).catch((emailError) => {
+        console.error('Send completion request email error:', emailError);
+      });
       return NextResponse.json<ApiResponse<WorkOrder>>({
         success: true,
         data: updatedWorkOrder

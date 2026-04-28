@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../lib/database';
 import { Finding, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { toPastTenseText } from '@/app/utils/textFormat';
 export async function POST(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
         RETURNING *
       `, [
         work_order_id,
-        description.trim(),
+        toPastTenseText(description),
         reference_image || null
       ]);
       const finding = result.rows[0];

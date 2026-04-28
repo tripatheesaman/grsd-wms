@@ -13,6 +13,7 @@ import { validateAction, validateSparePart, validateFinding, validateCompletionD
 import { WorkOrder, Finding, Action, SparePart, Technician, ActionTechnician, ActionDate, Unit } from '../../types';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { WORK_TYPES } from '../../utils/workTypes';
+import { toPastTenseTextLive } from '../../utils/textFormat';
 
 function toTimeHHMM(value: string): string {
   if (!value) return '';
@@ -296,12 +297,17 @@ export default function WorkOrderDetailPage() {
 
   const handleStartAgain = async () => {
     if (!selectedActionForStartAgain) return;
+    if (startAgainData.technician_ids.length === 0) {
+      toast.showError('Validation Error', 'Please select at least one technician for this date.');
+      return;
+    }
     try {
       const response = await apiClient.post(`/actions/${selectedActionForStartAgain}/dates`, {
         action_date: startAgainData.action_date,
         start_time: startAgainData.start_time,
         end_time: startAgainData.end_time,
-        is_completed: false
+        is_completed: false,
+        technician_ids: startAgainData.technician_ids
       });
       if (!response.success) {
         if (response.data) {
@@ -320,13 +326,6 @@ export default function WorkOrderDetailPage() {
       }
 
       if (response.success) {
-        if (startAgainData.technician_ids.length > 0) {
-          for (const techId of startAgainData.technician_ids) {
-            try {
-              await apiClient.post(`/actions/${selectedActionForStartAgain}/technicians`, { technician_id: techId });
-            } catch {}
-          }
-        }
         setShowStartAgainModal(false);
         setSelectedActionForStartAgain(null);
         setStartAgainData({
@@ -357,7 +356,8 @@ export default function WorkOrderDetailPage() {
         action_date: editActionDateData.action_date,
         start_time: editActionDateData.start_time,
         end_time: editActionDateData.end_time || null,
-        is_completed: editActionDateData.is_completed
+        is_completed: editActionDateData.is_completed,
+        technician_ids: editActionDateData.technician_ids
       });
       if (response.success) {
         setEditingActionDate(null);
@@ -446,16 +446,13 @@ export default function WorkOrderDetailPage() {
         start_time: newAction.start_time,
         end_time: newAction.end_time,
         is_completed: newAction.is_completed,
-        remarks: newAction.remarks || null
+        remarks: newAction.remarks || null,
+        technician_ids: newActionTechnicianIds
       });
       if (response.success) {
         const createdAction = response.data as unknown as Action;
-        if (createdAction && Array.isArray(newActionTechnicianIds) && newActionTechnicianIds.length > 0) {
-          for (const techId of newActionTechnicianIds) {
-            try {
-              await apiClient.post<ActionTechnician>(`/actions/${createdAction.id}/technicians`, { technician_id: techId });
-            } catch {}
-          }
+        if (createdAction?.id) {
+          fetchActionDates(createdAction.id);
         }
         setNewAction({
           description: '',
@@ -1208,8 +1205,11 @@ export default function WorkOrderDetailPage() {
               <Input
                 label=""
                 value={editCore.requested_by}
-                onChange={(e) => setEditCore(prev => ({ ...prev, requested_by: e.target.value }))}
+                onChange={(e) => setEditCore(prev => ({ ...prev, requested_by: e.target.value.toUpperCase() }))}
                 placeholder="Requested by"
+                autoCapitalize="characters"
+                autoCorrect="on"
+                spellCheck
               />
             ) : (
               <p className="text-gray-900">{workOrder.requested_by}</p>
@@ -1379,7 +1379,7 @@ export default function WorkOrderDetailPage() {
 
       <Card>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Findings</h2>
+          <h2 className="text-xl font-semibold text-gray-900">What was the problem found?</h2>
         </div>
 
         {}
@@ -1392,25 +1392,28 @@ export default function WorkOrderDetailPage() {
                 <div className="p-3 bg-white rounded border">
                   <div className="flex items-end gap-2">
                     <Button size="sm" onClick={() => setAddFindingFor(-1)}>
-                      {addFindingFor === -1 ? '✖️ Close Add Finding' : '➕ Add Finding'}
+                      {addFindingFor === -1 ? '✖️ Close Problem Entry' : '➕ Add Problem Entry'}
                     </Button>
                   </div>
                 </div>
                 {addFindingFor === -1 && (
                   <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
-                    <h5 className="font-medium text-blue-900 mb-2">Add Finding</h5>
+                    <h5 className="font-medium text-blue-900 mb-2">What was the problem found?</h5>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                       <div className="md:col-span-3">
                         <Input
-                          label="Finding Description"
+                          label="What was the problem found?"
                           value={newFinding.description}
-                          onChange={(e) => setNewFinding(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Describe the finding or defect..."
+                          onChange={(e) => setNewFinding(prev => ({ ...prev, description: toPastTenseTextLive(e.target.value) }))}
+                          placeholder="Describe the problem found"
+                          autoCorrect="on"
+                          autoCapitalize="sentences"
+                          spellCheck
                         />
                       </div>
                       <div className="flex gap-2">
                         <Button className="w-full" onClick={async () => { await handleAddFinding(); setAddFindingFor(null); }}>
-                          ➕ Add Finding
+                          ➕ Save Problem
                         </Button>
                         <Button variant="outline" onClick={() => { setAddFindingFor(null); setNewFinding({ description: '' }); }}>
                           Cancel
@@ -1465,12 +1468,15 @@ export default function WorkOrderDetailPage() {
                 {}
                 {editingFinding === finding.id && (
                   <div className="mb-3 p-3 bg-white rounded border">
-                    <h5 className="font-medium text-gray-800 mb-2">Edit Finding</h5>
+                    <h5 className="font-medium text-gray-800 mb-2">Update Problem Found</h5>
                     <Input
-                      label="Finding Description"
+                      label="What was the problem found?"
                       value={editFinding.description}
-                      onChange={(e) => setEditFinding(prev => ({ ...prev, description: e.target.value }))}
-                      placeholder="Describe the finding or defect..."
+                      onChange={(e) => setEditFinding(prev => ({ ...prev, description: toPastTenseTextLive(e.target.value) }))}
+                      placeholder="Describe the problem found"
+                      autoCorrect="on"
+                      autoCapitalize="sentences"
+                      spellCheck
                     />
                     <div className="flex space-x-3 mt-3">
                       <Button size="sm" onClick={() => handleEditFinding(finding.id)}>
@@ -1578,15 +1584,12 @@ export default function WorkOrderDetailPage() {
                               variant="outline"
                               onClick={() => {
                                 setSelectedActionForStartAgain(action.id);
-                                setStartAgainData(prev => ({
-                                  ...prev,
+                                setStartAgainData({
                                   action_date: new Date().toISOString().split('T')[0],
                                   start_time: '',
                                   end_time: '',
-                                  technician_ids: (action.technicians || [])
-                                    .map((t) => t.technician_id)
-                                    .filter((id): id is number => typeof id === 'number')
-                                }));
+                                  technician_ids: []
+                                });
                               }}
                             >
                               🔄 Start Again
@@ -1626,6 +1629,32 @@ export default function WorkOrderDetailPage() {
                                   onChange={(e) => setStartAgainData(prev => ({ ...prev, end_time: e.target.value }))}
                                 />
                               </div>
+                              <div className="flex-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Technicians *</label>
+                                <div className="max-h-28 overflow-auto bg-white rounded border p-2 space-y-1">
+                                  {technicians.map((t) => {
+                                    const checked = startAgainData.technician_ids.includes(t.id);
+                                    return (
+                                      <label key={t.id} className="flex items-center space-x-2 text-xs">
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            setStartAgainData(prev => ({
+                                              ...prev,
+                                              technician_ids: isChecked
+                                                ? [...prev.technician_ids, t.id]
+                                                : prev.technician_ids.filter(id => id !== t.id)
+                                            }));
+                                          }}
+                                        />
+                                        <span>{t.name} ({t.staff_id})</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                               <div>
                                 <Button 
                                   size="sm" 
@@ -1640,7 +1669,7 @@ export default function WorkOrderDetailPage() {
                                     }));
                                     setSelectedActionForStartAgain(null);
                                   }}
-                                  disabled={!startAgainData.action_date || !startAgainData.start_time}
+                                  disabled={!startAgainData.action_date || !startAgainData.start_time || startAgainData.technician_ids.length === 0}
                                 >
                                   ✓ Save
                                 </Button>
@@ -1679,11 +1708,11 @@ export default function WorkOrderDetailPage() {
                                         {actionDate.is_completed ? '✓ Completed' : '⏳ In Progress'}
                                       </span>
                                     </div>
-                                    {actionDate.technicians && actionDate.technicians.length > 0 && (
-                                      <div className="text-xs text-gray-500 mt-1">
-                                        Technicians: {actionDate.technicians.map((t: ActionTechnician) => t.name).join(', ')}
-                                      </div>
-                                    )}
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      Technicians: {actionDate.technicians && actionDate.technicians.length > 0
+                                        ? actionDate.technicians.map((t: ActionTechnician) => t.name).join(', ')
+                                        : 'Not assigned'}
+                                    </div>
                                   </div>
                                     <div className="flex space-x-1">
                                     <Button 
@@ -1766,6 +1795,32 @@ export default function WorkOrderDetailPage() {
                                             })()}
                                           </div>
                                     </div>
+                                    <div className="mt-2">
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">Technicians for this date</label>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-32 overflow-auto border rounded p-2 bg-gray-50">
+                                        {technicians.map((t) => {
+                                          const checked = editActionDateData.technician_ids.includes(t.id);
+                                          return (
+                                            <label key={t.id} className="flex items-center space-x-2 text-sm">
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={(e) => {
+                                                  const isChecked = e.target.checked;
+                                                  setEditActionDateData(prev => ({
+                                                    ...prev,
+                                                    technician_ids: isChecked
+                                                      ? [...prev.technician_ids, t.id]
+                                                      : prev.technician_ids.filter(id => id !== t.id)
+                                                  }));
+                                                }}
+                                              />
+                                              <span>{t.name} ({t.staff_id})</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
                                     <div className="flex space-x-2 mt-2">
                                       <Button size="sm" onClick={() => handleEditActionDate(action.id)}>
                                         Update
@@ -1786,13 +1841,16 @@ export default function WorkOrderDetailPage() {
                       {}
                       {editingAction === action.id && (
                         <div className="mb-3 p-3 bg-gray-50 rounded border">
-                          <h6 className="font-medium text-gray-800 mb-2">Edit Action</h6>
+                          <h6 className="font-medium text-gray-800 mb-2">Update Work Done</h6>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <Input
-                              label="Action Description"
+                              label="What work did you do to fix the problem?"
                               value={editAction.description}
-                              onChange={(e) => setEditAction(prev => ({ ...prev, description: e.target.value }))}
-                              placeholder="Describe the action taken..."
+                              onChange={(e) => setEditAction(prev => ({ ...prev, description: toPastTenseTextLive(e.target.value) }))}
+                              placeholder="Describe the work done to fix the problem"
+                              autoCorrect="on"
+                              autoCapitalize="sentences"
+                              spellCheck
                             />
                             <Input
                               label="Action Date"
@@ -1966,70 +2024,9 @@ export default function WorkOrderDetailPage() {
 
                       {}
                       <div className="mt-3 ml-4">
-                        <h6 className="font-medium text-gray-700 mb-1">Technicians:</h6>
-                        {}
-                        {(editingAction !== action.id) && (
-                          <div className="space-y-1">
-                            {(action.technicians || []).length === 0 ? (
-                              <p className="text-sm text-gray-500">No technicians assigned to this action.</p>
-                            ) : (
-                              (action.technicians || []).map((t) => (
-                                <div key={t.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                                  <div className="text-sm text-gray-700">{t.name} ({t.staff_id})</div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-
-                        {}
-                        {(editingAction === action.id && workOrder.status !== 'completed') && (
-                          <div className="mt-2 p-2 bg-white border rounded">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Select Technicians</label>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-auto">
-                                {technicians.map((t) => {
-                                  const assigned = (action.technicians || []).some(at => (at.technician_id ? at.technician_id === t.id : at.staff_id === t.staff_id));
-                                  return (
-                                    <label key={t.id} className="flex items-center space-x-2 p-2 bg-gray-50 rounded">
-                                      <input
-                                        type="checkbox"
-                                        checked={assigned}
-                                        onChange={async (e) => {
-                                          const checked = e.target.checked;
-                                          try {
-                                            if (checked) {
-                                              const res = await apiClient.post<ActionTechnician>(`/actions/${action.id}/technicians`, { technician_id: t.id });
-                                              if (!res.success) {
-                                                toast.showError('Error', res.error || 'Failed to add technician');
-                                              }
-                                            } else {
-                                              if (!(user && (user.role === 'admin' || user.role === 'superadmin'))) {
-                                                toast.showError('Not allowed', 'Only admins can remove technicians');
-                                                return;
-                                              }
-                                              const existing = (action.technicians || []).find(at => (at.technician_id ? at.technician_id === t.id : at.staff_id === t.staff_id));
-                                              if (existing) {
-                                                const res = await apiClient.delete(`/actions/${action.id}/technicians?action_technician_id=${existing.id}`);
-                                                if (!res.success) {
-                                                  toast.showError('Error', res.error || 'Failed to remove technician');
-                                                }
-                                              }
-                                            }
-                                            fetchWorkOrderDetails();
-                                          } catch {
-                                            toast.showError('Error', 'Operation failed');
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm text-gray-800">{t.name} ({t.staff_id})</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        <p className="text-xs text-gray-500">
+                          Technician involvement is shown per date in the Action Dates section below.
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -2037,10 +2034,10 @@ export default function WorkOrderDetailPage() {
                     <div className="p-3 bg-white rounded border">
                       <div className="flex items-end gap-2">
                         <Button size="sm" onClick={() => setSelectedFindingForAction(prev => prev === finding.id ? null : finding.id)}>
-                          {selectedFindingForAction === finding.id ? '✖️ Close Add Action' : '➕ Add Action'}
+                          {selectedFindingForAction === finding.id ? '✖️ Close Work Entry' : '➕ Add Work Entry'}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setAddFindingFor(prev => prev === finding.id ? null : finding.id)}>
-                          {addFindingFor === finding.id ? '✖️ Close Add Finding' : '➕ Add Finding'}
+                          {addFindingFor === finding.id ? '✖️ Close Problem Entry' : '➕ Add Problem Entry'}
                         </Button>
                       </div>
                     </div>
@@ -2050,13 +2047,16 @@ export default function WorkOrderDetailPage() {
                 {}
                 {selectedFindingForAction === finding.id && (
                   <div className="ml-4 mt-3 p-3 bg-white rounded border">
-                    <h5 className="font-medium text-gray-800 mb-2">Add Action</h5>
+                    <h5 className="font-medium text-gray-800 mb-2">What work did you do to fix the problem?</h5>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Input
-                        label="Action Description"
+                        label="What work did you do to fix the problem?"
                         value={newAction.description}
-                        onChange={(e) => setNewAction(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Describe the action taken..."
+                        onChange={(e) => setNewAction(prev => ({ ...prev, description: toPastTenseTextLive(e.target.value) }))}
+                        placeholder="Describe the work done to fix the problem"
+                        autoCorrect="on"
+                        autoCapitalize="sentences"
+                        spellCheck
                       />
                       <Input
                         label="Action Date"
@@ -2123,7 +2123,7 @@ export default function WorkOrderDetailPage() {
 
                     <div className="flex space-x-3 mt-3">
                       <Button size="sm" onClick={() => handleAddAction(finding.id)}>
-                        Add Action
+                        Save Work Entry
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setSelectedFindingForAction(null)}>
                         Cancel
@@ -2135,19 +2135,22 @@ export default function WorkOrderDetailPage() {
                 {}
                 {addFindingFor === finding.id && (
                   <div className="ml-4 mt-3 p-3 bg-blue-50 rounded border border-blue-200">
-                    <h5 className="font-medium text-blue-900 mb-2">Add Finding</h5>
+                    <h5 className="font-medium text-blue-900 mb-2">What was the problem found?</h5>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                       <div className="md:col-span-3">
                         <Input
-                          label="Finding Description"
+                          label="What was the problem found?"
                           value={newFinding.description}
-                          onChange={(e) => setNewFinding(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Describe the finding or defect..."
+                          onChange={(e) => setNewFinding(prev => ({ ...prev, description: toPastTenseTextLive(e.target.value) }))}
+                          placeholder="Describe the problem found"
+                          autoCorrect="on"
+                          autoCapitalize="sentences"
+                          spellCheck
                         />
                       </div>
                       <div className="flex gap-2">
                         <Button className="w-full" onClick={async () => { await handleAddFinding(); setAddFindingFor(null); }}>
-                          ➕ Add Finding
+                          ➕ Save Problem
                         </Button>
                         <Button variant="outline" onClick={() => { setAddFindingFor(null); setNewFinding({ description: '' }); }}>
                           Cancel
@@ -2419,7 +2422,7 @@ export default function WorkOrderDetailPage() {
             <div className="flex space-x-3 mt-6">
               <Button
                 onClick={handleStartAgain}
-                disabled={!startAgainData.action_date || !startAgainData.start_time}
+                disabled={!startAgainData.action_date || !startAgainData.start_time || startAgainData.technician_ids.length === 0}
                 className="flex-1"
               >
                 Add Date
