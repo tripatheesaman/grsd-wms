@@ -41,6 +41,18 @@ export async function GET(request: NextRequest) {
 
       const workOrder = workOrderResult.rows[0];
 
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS action_date_technicians (
+          id SERIAL PRIMARY KEY,
+          action_date_id INTEGER NOT NULL REFERENCES action_dates(id) ON DELETE CASCADE,
+          technician_id INTEGER REFERENCES technicians(id) ON DELETE SET NULL,
+          name VARCHAR(255) NOT NULL,
+          staff_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(action_date_id, staff_id)
+        )
+      `);
+
       const findingsResult = await client.query(`
         SELECT 
           f.*,
@@ -87,12 +99,13 @@ export async function GET(request: NextRequest) {
       `, [workOrderId]);
 
       const techniciansResult = await client.query(`
-        SELECT at.name, at.staff_id, a.id as action_id
-        FROM action_technicians at
-        JOIN actions a ON a.id = at.action_id
+        SELECT adt.name, adt.staff_id, ad.action_id, ad.id as action_date_id
+        FROM action_date_technicians adt
+        JOIN action_dates ad ON ad.id = adt.action_date_id
+        JOIN actions a ON a.id = ad.action_id
         JOIN findings f ON f.id = a.finding_id
         WHERE f.work_order_id = $1
-        ORDER BY at.name, at.staff_id
+        ORDER BY adt.name, adt.staff_id
       `, [workOrderId]);
 
       const templatePath = path.join(process.cwd(), 'public', 'template_file.xlsx');
@@ -134,9 +147,28 @@ export async function GET(request: NextRequest) {
 
       let actionRow = 15; 
       let actionsExceededLimit = false;
-  type ActionDateRecord = { action_date: string; start_time?: string | null; end_time?: string | null; };
+      type ActionDateRecord = { id?: number; action_date: string; start_time?: string | null; end_time?: string | null; };
+      type FlattenedActionRow = {
+        symbol: string;
+        action_id: number;
+        action_date_id?: number;
+        description: string;
+        action_date: string;
+        start_time?: string | null;
+        end_time?: string | null;
+      };
+      const toAlphaSuffix = (index: number): string => {
+        let n = index + 1;
+        let result = '';
+        while (n > 0) {
+          n -= 1;
+          result = String.fromCharCode(65 + (n % 26)) + result;
+          n = Math.floor(n / 26);
+        }
+        return result;
+      };
 
-  const allActions: Array<{ id: number; description: string; action_date: string; start_time: string; end_time: string; action_dates?: Array<ActionDateRecord> }> = [];
+      const allActions: Array<{ id: number; description: string; action_date: string; start_time: string; end_time: string; action_dates?: Array<ActionDateRecord> }> = [];
       for (const finding of findings) {
         if (finding.actions && Array.isArray(finding.actions)) {
           for (const action of finding.actions) {
@@ -146,7 +178,45 @@ export async function GET(request: NextRequest) {
           }
         }
       }
-      const actionIdToSymbolNumber = new Map<number, number>();
+      const actionDateIdToSymbol = new Map<number, string>();
+      const flattenedActionRows: FlattenedActionRow[] = [];
+      for (let i = 0; i < allActions.length; i++) {
+        const action = allActions[i];
+        const sortedDates = (Array.isArray(action.action_dates) ? action.action_dates : [])
+          .slice()
+          .sort((a, b) => new Date(a.action_date).getTime() - new Date(b.action_date).getTime());
+
+        if (sortedDates.length <= 1) {
+          const single = sortedDates[0];
+          const symbol = String(i + 1);
+          flattenedActionRows.push({
+            symbol,
+            action_id: action.id,
+            action_date_id: single?.id,
+            description: action.description,
+            action_date: single?.action_date || action.action_date,
+            start_time: single?.start_time || action.start_time,
+            end_time: single?.end_time || action.end_time
+          });
+          if (single?.id) actionDateIdToSymbol.set(single.id, symbol);
+          continue;
+        }
+
+        for (let d = 0; d < sortedDates.length; d++) {
+          const dateRecord = sortedDates[d];
+          const symbol = `${i + 1}${toAlphaSuffix(d)}`;
+          flattenedActionRows.push({
+            symbol,
+            action_id: action.id,
+            action_date_id: dateRecord.id,
+            description: action.description,
+            action_date: dateRecord.action_date,
+            start_time: dateRecord.start_time || action.start_time,
+            end_time: dateRecord.end_time || null
+          });
+          if (dateRecord.id) actionDateIdToSymbol.set(dateRecord.id, symbol);
+        }
+      }
       if (allActions.length > 0) {
         if (findings.length <= 3) {
           actionRow = 15;
@@ -155,65 +225,27 @@ export async function GET(request: NextRequest) {
         }
         const firstActionDataRow = actionRow;
 
-        for (let i = 0; i < Math.min(allActions.length, 3); i++) {
-          const action = allActions[i];
-          excelHelper.setCellValue(`A${actionRow}`, i + 1);
-          actionIdToSymbolNumber.set(action.id, i + 1);
-          excelHelper.setCellValue(`B${actionRow}`, action.description);
-            if (action.action_dates && Array.isArray(action.action_dates) && action.action_dates.length > 0) {
-            const sortedDates = (action.action_dates as ActionDateRecord[]).slice().sort((a: ActionDateRecord, b: ActionDateRecord) => new Date(a.action_date).getTime() - new Date(b.action_date).getTime());
-            const startDate = sortedDates[0].action_date;
-            const endDate = sortedDates[sortedDates.length - 1].action_date;
-            const startTime = sortedDates.find((d: ActionDateRecord) => d.start_time)?.start_time || action.start_time;
-            let endTime: string | null | undefined = action.end_time;
-            for (let idx = sortedDates.length - 1; idx >= 0; idx--) {
-              if (sortedDates[idx].end_time) { endTime = sortedDates[idx].end_time; break; }
-            }
-            excelHelper.setCellValue(`C${actionRow}`, formatTime(startTime));
-            excelHelper.setCellValue(`D${actionRow}`, formatTime(endTime || ''));
-            if (startDate === endDate) {
-              excelHelper.setCellValue(`E${actionRow}`, formatDate(startDate));
-            } else {
-              excelHelper.setCellValue(`E${actionRow}`, `${formatDate(startDate)}-${formatDate(endDate)}`);
-            }
-          } else {
-            excelHelper.setCellValue(`C${actionRow}`, formatTime(action.start_time));
-            excelHelper.setCellValue(`D${actionRow}`, formatTime(action.end_time));
-            excelHelper.setCellValue(`E${actionRow}`, formatDate(action.action_date));
-          }
+        for (let i = 0; i < Math.min(flattenedActionRows.length, 3); i++) {
+          const row = flattenedActionRows[i];
+          excelHelper.setCellValue(`A${actionRow}`, row.symbol);
+          excelHelper.setCellValue(`B${actionRow}`, row.description);
+          excelHelper.setCellValue(`C${actionRow}`, formatTime(row.start_time || ''));
+          excelHelper.setCellValue(`D${actionRow}`, formatTime(row.end_time || ''));
+          excelHelper.setCellValue(`E${actionRow}`, formatDate(row.action_date));
           actionRow++;
         }
 
 
-        if (allActions.length > 3) {
+        if (flattenedActionRows.length > 3) {
           actionsExceededLimit = true;
-          for (let i = 3; i < allActions.length; i++) {
+          for (let i = 3; i < flattenedActionRows.length; i++) {
             const newRowNumber = excelHelper.copyRowAndInsertAbove(firstActionDataRow, actionRow, ['A', 'B', 'C', 'D', 'E']);
-            const action = allActions[i];
-            excelHelper.setCellValue(`A${newRowNumber}`, i + 1);
-            actionIdToSymbolNumber.set(action.id, i + 1);
-            excelHelper.setCellValue(`B${newRowNumber}`, action.description);
-              if (action.action_dates && Array.isArray(action.action_dates) && action.action_dates.length > 0) {
-              const sortedDates = (action.action_dates as ActionDateRecord[]).slice().sort((a: ActionDateRecord, b: ActionDateRecord) => new Date(a.action_date).getTime() - new Date(b.action_date).getTime());
-              const startDate = sortedDates[0].action_date;
-              const endDate = sortedDates[sortedDates.length - 1].action_date;
-              const startTime = sortedDates.find((d: ActionDateRecord) => d.start_time)?.start_time || action.start_time;
-              let endTime: string | null | undefined = action.end_time;
-              for (let idx = sortedDates.length - 1; idx >= 0; idx--) {
-                if (sortedDates[idx].end_time) { endTime = sortedDates[idx].end_time; break; }
-              }
-              excelHelper.setCellValue(`C${newRowNumber}`, formatTime(startTime));
-              excelHelper.setCellValue(`D${newRowNumber}`, formatTime(endTime || ''));
-              if (startDate === endDate) {
-                excelHelper.setCellValue(`E${newRowNumber}`, formatDate(startDate));
-              } else {
-                excelHelper.setCellValue(`E${newRowNumber}`, `${formatDate(startDate)}-${formatDate(endDate)}`);
-              }
-            } else {
-              excelHelper.setCellValue(`C${newRowNumber}`, formatTime(action.start_time));
-              excelHelper.setCellValue(`D${newRowNumber}`, formatTime(action.end_time));
-              excelHelper.setCellValue(`E${newRowNumber}`, formatDate(action.action_date));
-            }
+            const row = flattenedActionRows[i];
+            excelHelper.setCellValue(`A${newRowNumber}`, row.symbol);
+            excelHelper.setCellValue(`B${newRowNumber}`, row.description);
+            excelHelper.setCellValue(`C${newRowNumber}`, formatTime(row.start_time || ''));
+            excelHelper.setCellValue(`D${newRowNumber}`, formatTime(row.end_time || ''));
+            excelHelper.setCellValue(`E${newRowNumber}`, formatDate(row.action_date));
             actionRow = newRowNumber + 1;
           }
 
@@ -241,7 +273,7 @@ export async function GET(request: NextRequest) {
            sparePartRow = 20;
          } else {
            const extraFindingsRows = findings.length > 3 ? findings.length - 3 : 0;
-           const extraActionsRows = allActions.length > 3 ? allActions.length - 3 : 0;
+           const extraActionsRows = flattenedActionRows.length > 3 ? flattenedActionRows.length - 3 : 0;
            sparePartRow = 20 + extraFindingsRows + extraActionsRows;
          }
          const firstSparePartDataRow = sparePartRow;
@@ -273,13 +305,13 @@ export async function GET(request: NextRequest) {
        }
 
       let technicianRow = 26; 
-      const perActionTechRows = techniciansResult.rows as Array<{ name: string; staff_id: string; action_id: number }>; 
-      const techKeyToData = new Map<string, { name: string; staff_id: string; symbols: number[] }>();
+      const perActionTechRows = techniciansResult.rows as Array<{ name: string; staff_id: string; action_id: number; action_date_id: number }>; 
+      const techKeyToData = new Map<string, { name: string; staff_id: string; symbols: string[] }>();
       for (const row of perActionTechRows) {
         if (!row || !row.name || row.name.trim() === '') continue;
         const key = `${row.staff_id}||${row.name.trim()}`;
-        const symbol = actionIdToSymbolNumber.get(row.action_id);
-        if (symbol === undefined) continue;
+        const symbol = actionDateIdToSymbol.get(row.action_date_id);
+        if (!symbol) continue;
         if (!techKeyToData.has(key)) {
           techKeyToData.set(key, { name: row.name.trim(), staff_id: row.staff_id, symbols: [symbol] });
         } else {
@@ -290,13 +322,13 @@ export async function GET(request: NextRequest) {
       const technicians = Array.from(techKeyToData.values()).map(t => ({
         name: t.name,
         staff_id: t.staff_id,
-        symbolsCsv: t.symbols.sort((a, b) => a - b).join(',')
+        symbolsCsv: t.symbols.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).join(',')
       }));
       if (!findingsExceededLimit && !actionsExceededLimit && !sparePartsExceededLimit && technicians.length <= 3) {
         technicianRow = 26;
       } else {
         const extraFindingsRows = findings.length > 3 ? findings.length - 3 : 0;
-        const extraActionsRows = allActions.length > 3 ? allActions.length - 3 : 0;
+        const extraActionsRows = flattenedActionRows.length > 3 ? flattenedActionRows.length - 3 : 0;
         const extraSparePartsRows = allSpareParts.length > 4 ? allSpareParts.length - 4 : 0;
         technicianRow = 26 + extraFindingsRows + extraActionsRows + extraSparePartsRows;
       }
