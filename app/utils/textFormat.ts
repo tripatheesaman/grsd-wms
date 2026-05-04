@@ -2,6 +2,14 @@ export function normalizeSpaces(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+/** Display / export label: "Name (Designation)" when designation is non-empty. */
+export function formatTechnicianNameWithDesignation(name: string, designation?: string | null): string {
+  const trimmedName = name?.trim() ?? '';
+  const d = designation?.trim();
+  if (!trimmedName) return '';
+  return d ? `${trimmedName} (${d})` : trimmedName;
+}
+
 export function toUpperNormalized(value: string): string {
   return normalizeSpaces(value).toUpperCase();
 }

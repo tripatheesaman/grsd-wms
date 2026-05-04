@@ -159,6 +159,8 @@ export interface TechnicianPerformance {
   technician_id?: number;
   name: string;
   staff_id: string;
+  /** Current designation from technicians master (when linked by technician_id). */
+  designation?: string | null;
   actions_worked: number;
   completed_actions: number;
   total_minutes: number;

@@ -1,6 +1,8 @@
 import nodemailer from 'nodemailer';
 import pool from '@/app/lib/database';
 import { getEmailSettings, parseRecipients } from '@/app/lib/emailSettings';
+import { getBasePath } from '@/app/utils/api';
+import { isUnusableLinkHost } from '@/app/utils/publicUrl';
 
 interface CompletionRequestEmailPayload {
   workOrderId: number;
@@ -10,13 +12,33 @@ interface CompletionRequestEmailPayload {
   appBaseUrl?: string;
 }
 
+/** Prefer explicit deploy URL; never use 0.0.0.0 / unspecified hosts from the request URL. */
 function resolveAppBaseUrl(appBaseUrl?: string): string {
-  return (
-    appBaseUrl ||
-    process.env.APP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000'
-  ).replace(/\/$/, '');
+  const fromEnv = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+
+  const candidate = (appBaseUrl || '').trim().replace(/\/$/, '');
+  if (candidate) {
+    try {
+      const u = new URL(candidate);
+      if (!isUnusableLinkHost(u.hostname)) {
+        return candidate;
+      }
+    } catch {
+      /* ignore invalid URL */
+    }
+  }
+  return 'http://localhost:3000'.replace(/\/$/, '');
+}
+
+/** Absolute app root including Next `basePath` (e.g. /wms) when links target the UI. */
+function resolveEmailAppRoot(appBaseUrl?: string): string {
+  const root = resolveAppBaseUrl(appBaseUrl);
+  const basePath = getBasePath();
+  if (!basePath) return root;
+  const r = root.replace(/\/$/, '');
+  if (r === basePath || r.endsWith(basePath)) return r;
+  return `${r}${basePath}`;
 }
 
 function formatDateForEmail(dateValue: string): string {
@@ -68,7 +90,7 @@ export async function sendCompletionRequestEmail(
 ): Promise<{ sent: boolean; reason?: string }> {
   const settings = await getEmailSettings();
   const recipients = parseRecipients(settings.completion_request_recipients);
-  const baseUrl = resolveAppBaseUrl(payload.appBaseUrl);
+  const baseUrl = resolveEmailAppRoot(payload.appBaseUrl);
   const reviewLink = `${baseUrl}/work-orders/${payload.workOrderId}`;
   const completionRequestsLink = `${baseUrl}/work-orders/completion-requests`;
   const completionDate = formatDateForEmail(payload.completionDate);
@@ -124,7 +146,7 @@ export async function sendPendingCompletionReminderEmail(params?: {
       return { sent: false, reason: 'No overdue pending completion requests found.', count: 0 };
     }
 
-    const baseUrl = resolveAppBaseUrl(params?.appBaseUrl);
+    const baseUrl = resolveEmailAppRoot(params?.appBaseUrl);
     const completionRequestsLink = `${baseUrl}/work-orders/completion-requests`;
     const rowsHtml = result.rows
       .map((row) => {
