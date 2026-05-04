@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { apiClient } from '@/app/utils/api';
 import { TechnicianPerformance } from '@/app/types';
+import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
 import Link from 'next/link';
 export default function PerformanceReportPage() {
   const { user } = useAuth();
@@ -101,7 +102,7 @@ export default function PerformanceReportPage() {
             {data.map((t) => (
               <div key={`${t.staff_id}-${t.name}`} className="min-w-0">
                 <div className="flex items-center justify-between text-sm text-gray-700">
-                  <span className="truncate mr-2">{t.name} ({t.staff_id})</span>
+                  <span className="truncate mr-2">{formatTechnicianNameWithDesignation(t.name, t.designation)} ({t.staff_id})</span>
                   <span>{t.completed_actions}</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded h-3">
@@ -125,7 +126,7 @@ export default function PerformanceReportPage() {
               return (
                 <div key={`${t.staff_id}-${t.name}`} className="min-w-0">
                   <div className="flex items-center justify-between text-sm text-gray-700">
-                    <span className="truncate mr-2">{t.name} ({t.staff_id})</span>
+                    <span className="truncate mr-2">{formatTechnicianNameWithDesignation(t.name, t.designation)} ({t.staff_id})</span>
                     <span>{hours} h</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded h-3">
@@ -162,7 +163,7 @@ export default function PerformanceReportPage() {
                 return (
                   <tr key={`${t.staff_id}-${t.name}`} className="border-b last:border-b-0">
                     <td className="py-2 pr-4">{t.staff_id}</td>
-                    <td className="py-2 pr-4">{t.name}</td>
+                    <td className="py-2 pr-4">{formatTechnicianNameWithDesignation(t.name, t.designation)}</td>
                     <td className="py-2 pr-4">{t.actions_worked}</td>
                     <td className="py-2 pr-4">{t.completed_actions}</td>
                     <td className="py-2 pr-4">{hours}</td>

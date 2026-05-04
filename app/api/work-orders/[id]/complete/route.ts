@@ -3,6 +3,7 @@ import pool from '../../../../lib/database';
 import { WorkOrder, ApiResponse } from '../../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { sendCompletionRequestEmail } from '@/app/lib/email';
+import { publicOriginFromRequest } from '@/app/utils/publicUrl';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -131,7 +132,6 @@ export async function PUT(
         RETURNING *
       `, [work_completed_date, auth.user.userId, workOrderId]);
       const updatedWorkOrder = result.rows[0];
-      const origin = new URL(request.url).origin;
       const requestedByName =
         [workOrder.first_name, workOrder.last_name].filter(Boolean).join(' ').trim() ||
         workOrder.requested_by ||
@@ -141,7 +141,7 @@ export async function PUT(
         workOrderNo: workOrder.work_order_no,
         requestedByName,
         completionDate: work_completed_date,
-        appBaseUrl: origin,
+        appBaseUrl: publicOriginFromRequest(request),
       }).catch((emailError) => {
         console.error('Send completion request email error:', emailError);
       });

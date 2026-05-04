@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ApiResponse, TechnicianPerformance } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
 import ExcelJS from 'exceljs';
 export async function GET(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'admin');
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
           tech_rows.technician_id AS technician_id,
           tech_rows.name AS name,
           tech_rows.staff_id AS staff_id,
+          MAX(tech_rows.designation) AS designation,
           COUNT(DISTINCT a.id) AS actions_worked,
           SUM(CASE WHEN ad.is_completed THEN 1 ELSE 0 END) AS completed_actions,
           SUM(
@@ -42,14 +44,40 @@ export async function GET(request: NextRequest) {
         FROM actions a
         JOIN action_dates ad ON ad.action_id = a.id
         JOIN LATERAL (
-          SELECT adt.technician_id, adt.name, adt.staff_id, adt.created_at
+          SELECT adt.technician_id, adt.name, adt.staff_id,
+            COALESCE(
+              NULLIF(trim(t_adt.designation), ''),
+              (
+                SELECT NULLIF(trim(tx.designation), '')
+                FROM technicians tx
+                WHERE trim(tx.staff_id) = trim(adt.staff_id)
+                  AND NULLIF(trim(tx.designation), '') IS NOT NULL
+                ORDER BY tx.id
+                LIMIT 1
+              )
+            ) AS designation,
+            adt.created_at
           FROM action_date_technicians adt
+          LEFT JOIN technicians t_adt ON t_adt.id = adt.technician_id
           WHERE adt.action_date_id = ad.id
 
           UNION ALL
 
-          SELECT at.technician_id, at.name, at.staff_id, at.created_at
+          SELECT at.technician_id, at.name, at.staff_id,
+            COALESCE(
+              NULLIF(trim(t_at.designation), ''),
+              (
+                SELECT NULLIF(trim(tx.designation), '')
+                FROM technicians tx
+                WHERE trim(tx.staff_id) = trim(at.staff_id)
+                  AND NULLIF(trim(tx.designation), '') IS NOT NULL
+                ORDER BY tx.id
+                LIMIT 1
+              )
+            ) AS designation,
+            at.created_at
           FROM action_technicians at
+          LEFT JOIN technicians t_at ON t_at.id = at.technician_id
           WHERE at.action_id = a.id
             AND NOT EXISTS (
               SELECT 1
@@ -66,6 +94,7 @@ export async function GET(request: NextRequest) {
         technician_id: r.technician_id ?? undefined,
         name: r.name,
         staff_id: r.staff_id,
+        designation: r.designation ?? null,
         actions_worked: Number(r.actions_worked) || 0,
         completed_actions: Number(r.completed_actions) || 0,
         total_minutes: Number(r.total_minutes) || 0,
@@ -75,7 +104,7 @@ export async function GET(request: NextRequest) {
         const ws = workbook.addWorksheet('Technician Performance');
         ws.columns = [
           { header: 'Staff ID', key: 'staff_id', width: 15 },
-          { header: 'Technician Name', key: 'name', width: 30 },
+          { header: 'Technician Name', key: 'name', width: 40 },
           { header: 'Actions Worked', key: 'actions_worked', width: 18 },
           { header: 'Completed Actions', key: 'completed_actions', width: 20 },
           { header: 'Total Hours', key: 'total_hours', width: 14 },
@@ -84,7 +113,7 @@ export async function GET(request: NextRequest) {
           const hours = (r.total_minutes / 60);
           ws.addRow({
             staff_id: r.staff_id,
-            name: r.name,
+            name: formatTechnicianNameWithDesignation(r.name, r.designation),
             actions_worked: r.actions_worked,
             completed_actions: r.completed_actions,
             total_hours: Math.round(hours * 100) / 100,
