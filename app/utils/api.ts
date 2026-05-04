@@ -55,6 +55,25 @@ class ApiClient {
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
   }
+  private handleUnauthorized(endpoint: string): void {
+    if (typeof window === 'undefined') return;
+    if (endpoint.startsWith('/auth/login')) return;
+
+    const token = localStorage.getItem('token');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+
+    // Avoid repeatedly navigating when several requests fail at once.
+    if (window.location.pathname.endsWith('/auth/login')) return;
+    if (!token) return;
+
+    const basePath = getBasePath();
+    const loginPath = `${basePath}/auth/login`;
+    const redirectTarget = `${loginPath}?expired=1`;
+    if (window.location.pathname + window.location.search !== redirectTarget) {
+      window.location.replace(redirectTarget);
+    }
+  }
   private getToken(): string | null {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('token');
@@ -83,7 +102,6 @@ class ApiClient {
         ...options,
         headers,
       });
-      const data = await response.json();
       if (!response.ok && response.status === 401) {
         const token = this.getToken();
         console.error('Authentication error:', {
@@ -91,6 +109,16 @@ class ApiClient {
           status: response.status,
           url: endpoint
         });
+        this.handleUnauthorized(endpoint);
+      }
+      let data: ApiResponse<T>;
+      try {
+        data = await response.json();
+      } catch {
+        data = {
+          success: false,
+          error: `Request failed with status ${response.status}`,
+        };
       }
       return data;
     } catch (error) {
@@ -128,6 +156,9 @@ class ApiClient {
     const match = /filename\s*=\s*"?([^";]+)"?/i.exec(cd || '');
     const filename = match ? decodeURIComponent(match[1]) : undefined;
     if (!resp.ok) {
+      if (resp.status === 401) {
+        this.handleUnauthorized(endpoint);
+      }
       return { ok: false, status: resp.status };
     }
     const blob = await resp.blob();

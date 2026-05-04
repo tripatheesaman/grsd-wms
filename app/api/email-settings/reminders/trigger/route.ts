@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { ApiResponse } from '@/app/types';
 import { sendPendingCompletionReminderEmail } from '@/app/lib/email';
+import { publicOriginFromRequest } from '@/app/utils/publicUrl';
 
 export async function POST(request: NextRequest) {
   const cronSecret = process.env.REMINDER_CRON_SECRET;
@@ -12,8 +13,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const origin = new URL(request.url).origin;
-    const result = await sendPendingCompletionReminderEmail({ appBaseUrl: origin });
+    const result = await sendPendingCompletionReminderEmail({
+      appBaseUrl: publicOriginFromRequest(request),
+    });
 
     return NextResponse.json<ApiResponse<typeof result>>({
       success: true,

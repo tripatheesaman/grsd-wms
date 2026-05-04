@@ -3,6 +3,7 @@ import pool from '@/app/lib/database';
 import { ApiResponse } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { ExcelHelper, formatTime, formatDate } from '@/app/utils/excel';
+import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
 import path from 'path';
 
 export async function GET(request: NextRequest) {
@@ -99,19 +100,45 @@ export async function GET(request: NextRequest) {
       `, [workOrderId]);
 
       const techniciansResult = await client.query(`
-        SELECT tech_rows.name, tech_rows.staff_id, ad.action_id, ad.id as action_date_id
+        SELECT tech_rows.name, tech_rows.staff_id, tech_rows.designation, ad.action_id, ad.id as action_date_id
         FROM action_dates ad
         JOIN actions a ON a.id = ad.action_id
         JOIN findings f ON f.id = a.finding_id
         JOIN LATERAL (
-          SELECT adt.name, adt.staff_id, adt.created_at
+          SELECT adt.name, adt.staff_id,
+            COALESCE(
+              NULLIF(trim(t_adt.designation), ''),
+              (
+                SELECT NULLIF(trim(tx.designation), '')
+                FROM technicians tx
+                WHERE trim(tx.staff_id) = trim(adt.staff_id)
+                  AND NULLIF(trim(tx.designation), '') IS NOT NULL
+                ORDER BY tx.id
+                LIMIT 1
+              )
+            ) AS designation,
+            adt.created_at
           FROM action_date_technicians adt
+          LEFT JOIN technicians t_adt ON t_adt.id = adt.technician_id
           WHERE adt.action_date_id = ad.id
 
           UNION ALL
 
-          SELECT at.name, at.staff_id, at.created_at
+          SELECT at.name, at.staff_id,
+            COALESCE(
+              NULLIF(trim(t_at.designation), ''),
+              (
+                SELECT NULLIF(trim(tx.designation), '')
+                FROM technicians tx
+                WHERE trim(tx.staff_id) = trim(at.staff_id)
+                  AND NULLIF(trim(tx.designation), '') IS NOT NULL
+                ORDER BY tx.id
+                LIMIT 1
+              )
+            ) AS designation,
+            at.created_at
           FROM action_technicians at
+          LEFT JOIN technicians t_at ON t_at.id = at.technician_id
           WHERE at.action_id = ad.action_id
             AND NOT EXISTS (
               SELECT 1
@@ -320,22 +347,30 @@ export async function GET(request: NextRequest) {
        }
 
       let technicianRow = 26; 
-      const perActionTechRows = techniciansResult.rows as Array<{ name: string; staff_id: string; action_id: number; action_date_id: number }>; 
-      const techKeyToData = new Map<string, { name: string; staff_id: string; symbols: string[] }>();
+      const perActionTechRows = techniciansResult.rows as Array<{
+        name: string;
+        staff_id: string;
+        designation: string | null;
+        action_id: number;
+        action_date_id: number;
+      }>;
+      const techKeyToData = new Map<string, { name: string; staff_id: string; designation: string | null; symbols: string[] }>();
       for (const row of perActionTechRows) {
         if (!row || !row.name || row.name.trim() === '') continue;
         const key = `${row.staff_id}||${row.name.trim()}`;
         const symbol = actionDateIdToSymbol.get(row.action_date_id);
         if (!symbol) continue;
+        const desig = row.designation?.trim() || null;
         if (!techKeyToData.has(key)) {
-          techKeyToData.set(key, { name: row.name.trim(), staff_id: row.staff_id, symbols: [symbol] });
+          techKeyToData.set(key, { name: row.name.trim(), staff_id: row.staff_id, designation: desig, symbols: [symbol] });
         } else {
           const entry = techKeyToData.get(key)!;
           if (!entry.symbols.includes(symbol)) entry.symbols.push(symbol);
+          if (!entry.designation && desig) entry.designation = desig;
         }
       }
       const technicians = Array.from(techKeyToData.values()).map(t => ({
-        name: t.name,
+        displayName: formatTechnicianNameWithDesignation(t.name, t.designation),
         staff_id: t.staff_id,
         symbolsCsv: t.symbols.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).join(',')
       }));
@@ -351,7 +386,7 @@ export async function GET(request: NextRequest) {
         for (let i = 0; i < Math.min(technicians.length, 3); i++) {
           const technician = technicians[i];
           excelHelper.setCellValue(`A${technicianRow}`, i + 1);
-          excelHelper.setCellValue(`B${technicianRow}`, technician.name);
+          excelHelper.setCellValue(`B${technicianRow}`, technician.displayName);
           excelHelper.setCellValue(`C${technicianRow}`, technician.symbolsCsv);
           excelHelper.setCellValue(`D${technicianRow}`, technician.staff_id);
            technicianRow++;
@@ -363,7 +398,7 @@ export async function GET(request: NextRequest) {
           const newRowNumber = excelHelper.copyRowAndInsertAbove(firstTechnicianDataRow, technicianRow, ['A', 'B', 'C', 'D', 'E']);
           const technician = technicians[i];
           excelHelper.setCellValue(`A${newRowNumber}`, i + 1);
-          excelHelper.setCellValue(`B${newRowNumber}`, technician.name);
+          excelHelper.setCellValue(`B${newRowNumber}`, technician.displayName);
           excelHelper.setCellValue(`C${newRowNumber}`, technician.symbolsCsv);
           excelHelper.setCellValue(`D${newRowNumber}`, technician.staff_id);
            technicianRow = newRowNumber + 1;
