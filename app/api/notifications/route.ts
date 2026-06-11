@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();

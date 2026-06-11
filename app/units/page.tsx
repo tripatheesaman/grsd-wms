@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { apiClient } from '../utils/api';
 import { useToast } from '../components/ToastContext';
 import { useAuth } from '../components/AuthProvider';
+import { isStaffRole } from '@/app/lib/roles';
 import { Unit } from '../types';
 export default function UnitsPage() {
   const { user } = useAuth();
@@ -14,7 +15,7 @@ export default function UnitsPage() {
   const [newUnit, setNewUnit] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
-  const canManage = user && (user.role === 'admin' || user.role === 'superadmin');
+  const canManage = user && isStaffRole(user.role);
   const load = async () => {
     const res = await apiClient.get<Unit[]>('/units');
     if (res.success && res.data) setUnits(res.data);

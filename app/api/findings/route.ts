@@ -3,8 +3,10 @@ import pool from '../../lib/database';
 import { Finding, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { toPastTenseText } from '@/app/utils/textFormat';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 export async function POST(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'user');
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();
@@ -39,6 +41,10 @@ export async function POST(request: NextRequest) {
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, auth, work_order_id);
+      if (!access.ok) return access.response;
+
       const workOrderCheck = await client.query(
         'SELECT id, status FROM work_orders WHERE id = $1',
         [work_order_id]

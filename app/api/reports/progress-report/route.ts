@@ -4,8 +4,10 @@ import { ApiResponse } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { ExcelHelper } from '@/app/utils/excel';
 import path from 'path';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { appendSectionFilter } from '@/app/lib/sectionAccess';
 export async function GET(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(request.url);
@@ -33,6 +35,9 @@ export async function GET(request: NextRequest) {
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const params: unknown[] = [fromDate, toDate];
+      let sectionSql = appendSectionFilter(auth, request, 'section', params);
       const workOrdersResult = await client.query(`
         SELECT 
           work_order_no,
@@ -43,20 +48,16 @@ export async function GET(request: NextRequest) {
           completion_approved_at
         FROM work_orders
         WHERE (
-          -- Work orders that started within the date range
           (work_order_date >= $1 AND work_order_date <= $2)
           OR
-          -- Work orders that started before the date range but are still ongoing
           (work_order_date < $1 AND status IN ('pending', 'ongoing', 'completion_requested'))
           OR
-          -- Work orders that completed within the date range
           (work_completed_date IS NOT NULL AND work_completed_date >= $1 AND work_completed_date <= $2)
           OR
-          -- Work orders that were approved for completion within the date range
           (completion_approved_at IS NOT NULL AND completion_approved_at >= $1 AND completion_approved_at <= $2)
-        )
+        )${sectionSql}
         ORDER BY work_order_date, work_order_no
-      `, [fromDate, toDate]);
+      `, params);
       const workOrders = workOrdersResult.rows;
       const categorizeWorkType = (workType: string): string => {
         const type = workType.toLowerCase().trim();

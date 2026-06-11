@@ -10,8 +10,9 @@ import { apiClient, getApiBaseUrl } from '../../utils/api';
 import { useToast } from '../../components/ToastContext';
 import { validateWorkOrder, validateFileSize, validateFileType } from '../../utils/validation';
 import { WorkOrder } from '../../types';
-import { WORK_TYPES } from '../../utils/workTypes';
+import { getWorkTypesForSection } from '../../utils/workTypes';
 import { toPresentTenseTextLive } from '../../utils/textFormat';
+import { useAuth } from '../../components/AuthProvider';
 
 interface CreateWorkOrderForm {
   work_order_no: string;
@@ -27,6 +28,7 @@ interface CreateWorkOrderForm {
 }
 
 export default function CreateWorkOrderPage() {
+  const { user } = useAuth();
   const [formData, setFormData] = useState<CreateWorkOrderForm>({
     work_order_no: '',
     work_order_date: '',
@@ -43,6 +45,7 @@ export default function CreateWorkOrderPage() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const router = useRouter();
   const toast = useToast();
+  const availableWorkTypes = getWorkTypesForSection(user?.section);
 
 
   useEffect(() => {
@@ -339,7 +342,7 @@ export default function CreateWorkOrderPage() {
                 required
               >
                 <option value="">Select work type</option>
-                {WORK_TYPES.map((type) => (
+                {availableWorkTypes.map((type) => (
                   <option key={type} value={type}>{type}</option>
                 ))}
               </select>

@@ -80,6 +80,8 @@ export default function OngoingWorkOrdersPage() {
   };
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'pending':
+        return 'bg-orange-100 text-orange-800';
       case 'ongoing':
         return 'bg-blue-100 text-blue-800';
       case 'completion_requested':
@@ -90,6 +92,8 @@ export default function OngoingWorkOrdersPage() {
   };
   const getStatusText = (status: string) => {
     switch (status) {
+      case 'pending':
+        return '⏳ Pending Approval';
       case 'ongoing':
         return '🔄 In Progress';
       case 'completion_requested':

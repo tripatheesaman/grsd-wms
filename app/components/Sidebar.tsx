@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { sectionLabel } from '@/app/lib/sections';
+import { isStaffRole, canFinalApproveCompletion } from '@/app/lib/roles';
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../utils/api';
 import { WorkOrder } from '../types';
@@ -57,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       label: 'Completed Tasks',
       icon: '✅'
     },
-    ...(user && (user.role === 'admin' || user.role === 'superadmin') ? [
+    ...(user && isStaffRole(user.role) ? [
       { 
         href: '/work-orders/completion-requests', 
         label: 'Completion Requests', 
@@ -65,11 +67,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
         badge: completionRequestsCount > 0 ? completionRequestsCount : undefined
       },
     ] : []),
-    ...(user && (user.role === 'admin' || user.role === 'superadmin') ? [
+    ...(user && isStaffRole(user.role) ? [
       { href: '/technicians', label: 'Technicians', icon: '🛠️' },
       { href: '/units', label: 'Units', icon: '📦' },
       { href: '/reports', label: 'Reports', icon: '📈' },
       { href: '/reports/progress', label: 'Progress Report', icon: '📊' },
+      ...(user && (user.role === 'superadmin' || user.section === 'nem')
+        ? [{ href: '/reports/job-allocation', label: 'Job Allocation Report', icon: '🗓️' }]
+        : []),
       { href: '/reports/performance', label: 'Performance Report', icon: '📈' },
     ] : []),    
     ...(user && (user.role === 'superadmin') ? [
@@ -80,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   ];
 
   const fetchCompletionRequestsCount = useCallback(async () => {
-    if (user && (user.role === 'admin' || user.role === 'superadmin')) {
+    if (user && isStaffRole(user.role)) {
       try {
         const response = await apiClient.get<WorkOrder[]>('/work-orders/completion-requests');
         if (response.success && response.data && Array.isArray(response.data)) {
@@ -138,7 +143,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       >
         <div className="flex-shrink-0 sticky top-0 bg-[#08398F] p-4 border-b border-[#062a6b] text-white">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold truncate">Workshops Section</h2>
+            <h2 className="text-lg font-semibold truncate">
+              {user?.role === 'superadmin' ? 'All Sections' : sectionLabel(user?.section)}
+            </h2>
             <button
               onClick={onToggle}
               className="lg:hidden text-white hover:text-gray-300 p-2"

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from './AuthProvider';
+import { sectionLabel } from '@/app/lib/sections';
 import { NotificationBell } from './NotificationBell';
 import Image from 'next/image';
 import logo from '@/public/logo.png';
@@ -40,7 +41,10 @@ export const TopBar: React.FC = () => {
             <p className="text-sm font-medium text-gray-900">
               Welcome, {user.first_name} {user.last_name}
             </p>
-            <p className="text-xs text-gray-500">{user.username} • {user.role}</p>
+            <p className="text-xs text-gray-500">
+              {user.username} • {user.role}
+              {user.role !== 'superadmin' && user.section ? ` • ${sectionLabel(user.section)}` : ''}
+            </p>
           </div>
 
           <div className="relative">

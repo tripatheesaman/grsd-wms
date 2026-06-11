@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
+import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { appendSectionFilter } from '@/app/lib/sectionAccess';
+
 export async function GET(request: NextRequest) {
+  const auth = requireRoleAtLeast(request, 'user');
+  if (auth instanceof NextResponse) return auth;
+
   const client = await pool.connect();
   try {
+    await ensureSectionSchema(client);
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
@@ -12,47 +20,46 @@ export async function GET(request: NextRequest) {
     const date_from = searchParams.get('date_from');
     const date_to = searchParams.get('date_to');
     const offset = (page - 1) * limit;
-    const whereConditions = ['status = $1'];
+
     const queryParams: (string | number)[] = ['completed'];
-    let paramIndex = 2;
+    let query = 'SELECT * FROM work_orders WHERE status = $1';
+    query += appendSectionFilter(auth, request, 'section', queryParams);
+    let paramIndex = queryParams.length + 1;
+
     if (equipment_number) {
-      whereConditions.push(`equipment_number ILIKE $${paramIndex}`);
+      query += ` AND equipment_number ILIKE $${paramIndex}`;
       queryParams.push(`%${equipment_number}%`);
       paramIndex++;
     }
     if (work_type) {
-      whereConditions.push(`work_type ILIKE $${paramIndex}`);
+      query += ` AND work_type ILIKE $${paramIndex}`;
       queryParams.push(`%${work_type}%`);
       paramIndex++;
     }
     if (requested_by) {
-      whereConditions.push(`requested_by ILIKE $${paramIndex}`);
+      query += ` AND requested_by ILIKE $${paramIndex}`;
       queryParams.push(`%${requested_by}%`);
       paramIndex++;
     }
     if (date_from) {
-      whereConditions.push(`work_order_date >= $${paramIndex}`);
+      query += ` AND work_order_date >= $${paramIndex}`;
       queryParams.push(date_from);
       paramIndex++;
     }
     if (date_to) {
-      whereConditions.push(`work_order_date <= $${paramIndex}`);
+      query += ` AND work_order_date <= $${paramIndex}`;
       queryParams.push(date_to);
       paramIndex++;
     }
-    const whereClause = whereConditions.join(' AND ');
-    const countQuery = `SELECT COUNT(*) FROM work_orders WHERE ${whereClause}`;
+
+    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
     const countResult = await client.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].count);
-    const dataQuery = `
-      SELECT * FROM work_orders 
-      WHERE ${whereClause}
-      ORDER BY work_completed_date DESC, created_at DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `;
-    const dataParams = [...queryParams, limit, offset];
-    const dataResult = await client.query(dataQuery, dataParams);
+
+    const dataQuery = `${query} ORDER BY work_completed_date DESC, created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    const dataResult = await client.query(dataQuery, [...queryParams, limit, offset]);
     const totalPages = Math.ceil(total / limit);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -60,16 +67,16 @@ export async function GET(request: NextRequest) {
         total,
         page,
         totalPages,
-        limit
-      }
+        limit,
+      },
     });
   } catch (error) {
     console.error('Error fetching completed work orders:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch completed work orders' },
-      { status: 500 }
+      { status: 500 },
     );
   } finally {
     client.release();
   }
-} 
+}
