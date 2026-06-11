@@ -283,6 +283,27 @@ export function getWorkTypeCode(workType: string): string {
   return workType.substring(0, 2).toUpperCase();
 }
 
+export function getNemWorkTypeCode(workType: string): string {
+  if (!workType) return '';
+  const workTypeLower = workType.toLowerCase().trim();
+  if (workTypeLower === 'electrical') return 'E';
+  if (workTypeLower === 'hydraulics') return 'H';
+  if (workTypeLower === 'mechanical') return 'M';
+  if (workTypeLower === 'schedule check') return 'SC';
+  if (workTypeLower === 'cargo baggage') return 'CB';
+  if (workTypeLower === 'fabrication') return 'F';
+  if (workTypeLower === 'painting') return 'P';
+  if (workTypeLower === 'others' || workTypeLower === 'other') return 'O';
+  if (workTypeLower.includes('cargo') || workTypeLower.includes('baggage')) return 'CB';
+  if (workTypeLower.includes('schedule') && workTypeLower.includes('check')) return 'SC';
+  if (workTypeLower.includes('hydraulic')) return 'H';
+  if (workTypeLower.includes('electrical')) return 'E';
+  if (workTypeLower.includes('mechanical')) return 'M';
+  if (workTypeLower.includes('fabrication')) return 'F';
+  if (workTypeLower.includes('paint')) return 'P';
+  return 'O';
+}
+
 export function getTechnicianInitials(name: string): string {
   if (!name) return '';
   const nameParts = name.trim().split(/\s+/);

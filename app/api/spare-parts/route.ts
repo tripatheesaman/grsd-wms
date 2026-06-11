@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../lib/database';
 import { SparePart, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertActionAccess } from '@/app/lib/sectionAccess';
 export async function POST(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'user');
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();
@@ -61,6 +63,10 @@ export async function POST(request: NextRequest) {
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertActionAccess(client, auth, action_id);
+      if (!access.ok) return access.response;
+
       const actionCheck = await client.query(
         'SELECT id FROM actions WHERE id = $1',
         [action_id]

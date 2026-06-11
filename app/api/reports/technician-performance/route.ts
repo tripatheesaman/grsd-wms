@@ -4,8 +4,10 @@ import { ApiResponse, TechnicianPerformance } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
 import ExcelJS from 'exceljs';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { appendSectionFilter } from '@/app/lib/sectionAccess';
 export async function GET(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const url = new URL(request.url);
@@ -15,6 +17,7 @@ export async function GET(request: NextRequest) {
     const exportType = sp.get('export');
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
       const params: unknown[] = [];
       const filters: string[] = [];
       if (dateFrom) {
@@ -24,6 +27,10 @@ export async function GET(request: NextRequest) {
       if (dateTo) {
         params.push(dateTo);
         filters.push(`ad.action_date <= $${params.length}`);
+      }
+      const sectionClause = appendSectionFilter(auth, request, 'wo.section', params);
+      if (sectionClause) {
+        filters.push(sectionClause.trim().replace(/^AND\s/, ''));
       }
       const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
       const sql = `
@@ -42,6 +49,8 @@ export async function GET(request: NextRequest) {
             END
           )::int AS total_minutes
         FROM actions a
+        JOIN findings f ON f.id = a.finding_id
+        JOIN work_orders wo ON wo.id = f.work_order_id
         JOIN action_dates ad ON ad.action_id = a.id
         JOIN LATERAL (
           SELECT adt.technician_id, adt.name, adt.staff_id,

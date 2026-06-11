@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ApiResponse, WorkOrder } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -9,7 +11,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const workOrderId = parseInt(id);
@@ -30,6 +32,10 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, auth, workOrderId);
+      if (!access.ok) return access.response;
+
       const currentResult = await client.query(
         'SELECT reference_document FROM work_orders WHERE id = $1',
         [workOrderId]
@@ -88,7 +94,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const workOrderId = parseInt(id);
@@ -97,6 +103,10 @@ export async function DELETE(
   }
   const client = await pool.connect();
   try {
+    await ensureSectionSchema(client);
+    const access = await assertWorkOrderAccess(client, auth, workOrderId);
+    if (!access.ok) return access.response;
+
     const currentResult = await client.query(
       'SELECT reference_document FROM work_orders WHERE id = $1',
       [workOrderId]

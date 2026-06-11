@@ -15,7 +15,16 @@ interface CompletionRequestEmailPayload {
 /** Prefer explicit deploy URL; never use 0.0.0.0 / unspecified hosts from the request URL. */
 function resolveAppBaseUrl(appBaseUrl?: string): string {
   const fromEnv = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/$/, '');
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    try {
+      const u = new URL(fromEnv);
+      if (!isUnusableLinkHost(u.hostname)) {
+        return fromEnv;
+      }
+    } catch {
+      /* ignore invalid URL */
+    }
+  }
 
   const candidate = (appBaseUrl || '').trim().replace(/\/$/, '');
   if (candidate) {

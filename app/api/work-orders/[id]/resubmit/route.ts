@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ApiResponse, WorkOrder } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -15,6 +17,10 @@ export async function PUT(
   }
   const client = await pool.connect();
   try {
+    await ensureSectionSchema(client);
+    const access = await assertWorkOrderAccess(client, auth, workOrderId);
+    if (!access.ok) return access.response;
+
     const workOrderResult = await client.query(
       'SELECT * FROM work_orders WHERE id = $1',
       [workOrderId]

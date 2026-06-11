@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ActionTechnician, ApiResponse } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { technicianApprovalStatusForRole } from '@/app/lib/roles';
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -59,12 +60,13 @@ export async function POST(
       if (!insertName || !insertStaffId) {
         return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Name and staff_id are required' }, { status: 400 });
       }
+      const approvalStatus = technicianApprovalStatusForRole(auth.user.role);
       const result = await client.query(
-        `INSERT INTO action_technicians (action_id, technician_id, name, staff_id)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO action_technicians (action_id, technician_id, name, staff_id, approval_status)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (action_id, staff_id) DO NOTHING
-         RETURNING id, action_id, technician_id, name, staff_id, created_at`,
-        [actionId, insertTechnicianId || null, insertName.trim(), insertStaffId.trim()]
+         RETURNING id, action_id, technician_id, name, staff_id, approval_status, created_at`,
+        [actionId, insertTechnicianId || null, insertName.trim(), insertStaffId.trim(), approvalStatus]
       );
       if (result.rows.length === 0) {
         return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Technician already added' }, { status: 409 });
@@ -81,7 +83,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
