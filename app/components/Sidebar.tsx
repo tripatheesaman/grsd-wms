@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 import { sectionLabel } from '@/app/lib/sections';
-import { isStaffRole, canFinalApproveCompletion } from '@/app/lib/roles';
+import { isStaffRole } from '@/app/lib/roles';
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../utils/api';
 import { WorkOrder } from '../types';

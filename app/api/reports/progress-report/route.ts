@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     try {
       await ensureSectionSchema(client);
       const params: unknown[] = [fromDate, toDate];
-      let sectionSql = appendSectionFilter(auth, request, 'section', params);
+      const sectionSql = appendSectionFilter(auth, request, 'section', params);
       const workOrdersResult = await client.query(`
         SELECT 
           work_order_no,

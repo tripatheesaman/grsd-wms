@@ -82,7 +82,8 @@ async function runMigration(client: PoolClient): Promise<void> {
  * Applies section schema once per process. Uses a dedicated connection so callers
  * can release their own client without interrupting migration.
  */
-export async function ensureSectionSchema(_client?: PoolClient): Promise<void> {
+export async function ensureSectionSchema(client?: PoolClient): Promise<void> {
+  void client;
   if (schemaEnsured) return;
 
   if (!migrationPromise) {

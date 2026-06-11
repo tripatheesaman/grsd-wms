@@ -3,7 +3,7 @@ import pool from '../../lib/database';
 import { ApiResponse, Unit } from '../../types';
 import { requireAuth, requireRoleAtLeast } from '@/app/api/middleware';
 import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { appendSectionFilter, assertUnitAccess, sectionForCreate } from '@/app/lib/sectionAccess';
+import { appendSectionFilter, sectionForCreate } from '@/app/lib/sectionAccess';
 
 export async function GET(request: NextRequest) {
   const auth = requireAuth(request);

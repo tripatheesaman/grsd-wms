@@ -3,7 +3,7 @@ import pool from '../../lib/database';
 import { Technician, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { appendSectionFilter, assertTechnicianAccess, sectionForCreate } from '@/app/lib/sectionAccess';
+import { appendSectionFilter, sectionForCreate } from '@/app/lib/sectionAccess';
 
 export async function GET(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'user');
