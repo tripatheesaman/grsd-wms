@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/database';
 import { WorkOrder, ApiResponse } from '../../../types';
-import { requireAuth } from '@/app/api/middleware';
+import { requireAuth, requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
+import { roleAtLeast } from '@/app/lib/roles';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 import { toUpperNormalized } from '@/app/utils/textFormat';
+import { isWorkType } from '@/app/utils/workTypes';
 
 interface WorkOrderDetail extends WorkOrder {
   completion_approved_by_name?: string;
@@ -51,6 +55,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = requireRoleAtLeast(request, 'user');
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { id } = await params;
     const workOrderId = parseInt(id);
@@ -63,6 +70,10 @@ export async function GET(
 
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, auth, workOrderId);
+      if (!access.ok) return access.response;
+
       const workOrderResult = await client.query(`
         SELECT wo.*, 
                CONCAT(approver.first_name, ' ', approver.last_name) as completion_approved_by_name,
@@ -188,15 +199,22 @@ export async function PUT(
 
     const client = await pool.connect();
     try {
-      const existing = await client.query('SELECT reference_document, requested_by_id, status FROM work_orders WHERE id = $1', [workOrderId]);
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, { user }, workOrderId);
+      if (!access.ok) return access.response;
+
+      const existing = await client.query('SELECT reference_document, requested_by_id, status, section FROM work_orders WHERE id = $1', [workOrderId]);
       if (existing.rows.length === 0) {
         return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
       }
 
       const workOrder = existing.rows[0];
-      const isAdmin = user.role === 'admin' || user.role === 'superadmin';
+      if (work_type !== undefined && !isWorkType(String(work_type), workOrder.section)) {
+        return NextResponse.json({ success: false, error: `Invalid work type for ${workOrder.section} section` }, { status: 400 });
+      }
+      const isStaff = roleAtLeast(user.role, 'incharge');
       const isCreatorOfRejected = user.userId === workOrder.requested_by_id && workOrder.status === 'rejected';
-      if (!isAdmin && !isCreatorOfRejected) {
+      if (!isStaff && !isCreatorOfRejected) {
         return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
       }
       const oldDoc: string | null = existing.rows[0].reference_document || null;
@@ -253,6 +271,10 @@ export async function DELETE(
 
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, auth, workOrderId);
+      if (!access.ok) return access.response;
+
       const docRes = await client.query('SELECT reference_document FROM work_orders WHERE id = $1', [workOrderId]);
       if (docRes.rows.length === 0) {
         return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });

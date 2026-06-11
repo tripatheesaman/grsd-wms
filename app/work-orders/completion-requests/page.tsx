@@ -7,11 +7,14 @@ import { useToast } from '@/app/components/ToastContext';
 import { Card } from '@/app/components/Card';
 import { Button } from '@/app/components/Button';
 import { useAuth } from '@/app/components/AuthProvider';
+import { isStaffRole, canFinalApproveCompletion } from '@/app/lib/roles';
+
 interface CompletionRequest extends WorkOrder {
   completion_requested_by_username?: string;
   completion_requested_by_first_name?: string;
   completion_requested_by_last_name?: string;
 }
+
 export default function CompletionRequestsPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -21,6 +24,7 @@ export default function CompletionRequestsPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [workOrderToReject, setWorkOrderToReject] = useState<number | null>(null);
+
   const fetchCompletionRequests = useCallback(async () => {
     try {
       const response = await apiClient.get<CompletionRequest[]>('/work-orders/completion-requests');
@@ -35,19 +39,21 @@ export default function CompletionRequestsPage() {
       setLoading(false);
     }
   }, [toast]);
+
   useEffect(() => {
-    if (user && (user.role === 'admin' || user.role === 'superadmin')) {
+    if (user && isStaffRole(user.role)) {
       fetchCompletionRequests();
     }
   }, [user, fetchCompletionRequests]);
-  const handleApproveCompletion = async (workOrderId: number) => {
+
+  const handleAdminApprove = async (workOrderId: number) => {
     try {
       const response = await apiClient.put(`/work-orders/${workOrderId}/approve-completion`, {
         approved: true
       });
       if (response.success) {
         toast.showSuccess('Success', 'Work order completion approved successfully');
-        fetchCompletionRequests(); 
+        fetchCompletionRequests();
       } else {
         toast.showError('Error', response.error || 'Failed to approve completion');
       }
@@ -55,15 +61,36 @@ export default function CompletionRequestsPage() {
       toast.showError('Error', 'Failed to approve completion');
     }
   };
-  const handleRejectCompletion = async (workOrderId: number, rejectionReason: string) => {
+
+  const handleInchargeApprove = async (workOrderId: number) => {
     try {
-      const response = await apiClient.put(`/work-orders/${workOrderId}/approve-completion`, {
+      const response = await apiClient.put(`/work-orders/${workOrderId}/incharge-review`, {
+        approved: true
+      });
+      if (response.success) {
+        toast.showSuccess('Success', 'Completion request forwarded to admin for final approval');
+        fetchCompletionRequests();
+      } else {
+        toast.showError('Error', response.error || 'Failed to review completion');
+      }
+    } catch {
+      toast.showError('Error', 'Failed to review completion');
+    }
+  };
+
+  const handleRejectCompletion = async (workOrderId: number, rejectionReason: string) => {
+    if (!user) return;
+    try {
+      const endpoint = user.role === 'incharge'
+        ? `/work-orders/${workOrderId}/incharge-review`
+        : `/work-orders/${workOrderId}/approve-completion`;
+      const response = await apiClient.put(endpoint, {
         approved: false,
         rejection_reason: rejectionReason
       });
       if (response.success) {
         toast.showSuccess('Success', 'Work order completion rejected');
-        fetchCompletionRequests(); 
+        fetchCompletionRequests();
         setShowRejectModal(false);
         setRejectReason('');
         setWorkOrderToReject(null);
@@ -74,23 +101,36 @@ export default function CompletionRequestsPage() {
       toast.showError('Error', 'Failed to reject completion');
     }
   };
+
   const openRejectModal = (workOrderId: number) => {
     setWorkOrderToReject(workOrderId);
     setShowRejectModal(true);
-    setRejectReason(''); 
+    setRejectReason('');
   };
+
   const confirmReject = () => {
     if (workOrderToReject && rejectReason.trim()) {
       handleRejectCompletion(workOrderToReject, rejectReason.trim());
     }
   };
+
   const formatDate = (date: string | Date) => {
     return new Date(date).toLocaleDateString('en-GB');
   };
+
   const formatDateTime = (date: string | Date) => {
     return new Date(date).toLocaleString('en-GB');
   };
-  if (!user || user.role === 'user') {
+
+  const canActOnRequest = (workOrder: CompletionRequest) => {
+    if (!user) return false;
+    const stage = workOrder.completion_review_stage || (user.role === 'incharge' ? 'incharge' : 'admin');
+    if (user.role === 'incharge') return stage === 'incharge';
+    if (canFinalApproveCompletion(user.role)) return stage === 'admin';
+    return false;
+  };
+
+  if (!user || !isStaffRole(user.role)) {
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-semibold text-gray-900">Access Denied</h2>
@@ -98,6 +138,7 @@ export default function CompletionRequestsPage() {
       </div>
     );
   }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-64">
@@ -105,17 +146,19 @@ export default function CompletionRequestsPage() {
       </div>
     );
   }
+
+  const pageDescription = user.role === 'incharge'
+    ? 'Review completion requests from users and forward approved work to admin'
+    : user.role === 'admin'
+      ? 'Final approval for work orders reviewed by the incharge'
+      : 'Review and approve pending work order completion requests';
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Completion Requests</h1>
-          <p className="text-gray-600">
-            {user.role === 'admin' 
-              ? 'View pending work order completion requests (approval requires superadmin access)'
-              : 'Review and approve pending work order completion requests'
-            }
-          </p>
+          <p className="text-gray-600">{pageDescription}</p>
         </div>
       </div>
       {completionRequests.length === 0 ? (
@@ -136,7 +179,7 @@ export default function CompletionRequestsPage() {
                       {workOrder.work_order_no}
                     </h3>
                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
-                      Completion Requested
+                      {workOrder.completion_review_stage === 'incharge' ? 'Awaiting Incharge' : 'Awaiting Admin'}
                     </span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-gray-600 mb-4">
@@ -159,25 +202,24 @@ export default function CompletionRequestsPage() {
                       <span className="font-medium">Allocated:</span> {formatDateTime(workOrder.job_allocation_time)}
                     </div>
                   </div>
-                  {}
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                     <h4 className="font-medium text-blue-900 mb-2">Completion Request Details</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="font-medium text-blue-800">Requested by:</span> 
+                        <span className="font-medium text-blue-800">Requested by:</span>
                         <span className="ml-2 text-blue-700">
                           {workOrder.completion_requested_by_first_name} {workOrder.completion_requested_by_last_name}
                           {workOrder.completion_requested_by_username && ` (${workOrder.completion_requested_by_username})`}
                         </span>
                       </div>
                       <div>
-                        <span className="font-medium text-blue-800">Requested on:</span> 
+                        <span className="font-medium text-blue-800">Requested on:</span>
                         <span className="ml-2 text-blue-700">
                           {workOrder.completion_requested_at ? formatDateTime(workOrder.completion_requested_at) : 'N/A'}
                         </span>
                       </div>
                       <div>
-                        <span className="font-medium text-blue-800">Completion date:</span> 
+                        <span className="font-medium text-blue-800">Completion date:</span>
                         <span className="ml-2 text-blue-700">
                           {workOrder.work_completed_date ? formatDate(workOrder.work_completed_date) : 'N/A'}
                         </span>
@@ -193,15 +235,16 @@ export default function CompletionRequestsPage() {
                   >
                     View Details
                   </Button>
-                  {}
-                  {user.role === 'superadmin' ? (
+                  {canActOnRequest(workOrder) ? (
                     <>
                       <Button
                         size="sm"
-                        onClick={() => handleApproveCompletion(workOrder.id)}
+                        onClick={() => user.role === 'incharge'
+                          ? handleInchargeApprove(workOrder.id)
+                          : handleAdminApprove(workOrder.id)}
                         className="bg-green-600 hover:bg-green-700 text-white"
                       >
-                        ✅ Approve
+                        {user.role === 'incharge' ? '✅ Forward to Admin' : '✅ Approve'}
                       </Button>
                       <Button
                         size="sm"
@@ -223,7 +266,6 @@ export default function CompletionRequestsPage() {
           ))}
         </div>
       )}
-      {}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
@@ -235,14 +277,11 @@ export default function CompletionRequestsPage() {
               <p className="text-gray-600 mb-4">Please provide a reason for rejecting this completion request:</p>
               <textarea
                 value={rejectReason}
-                onChange={(e) => {
-                  setRejectReason(e.target.value);
-                }}
+                onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="Enter rejection reason..."
                 className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none"
                 rows={3}
                 autoFocus
-                onFocus={(e) => e.target.select()}
               />
               <div className="flex space-x-3 mt-6">
                 <Button

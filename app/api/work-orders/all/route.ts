@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ApiResponse, WorkOrder } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { appendSectionFilter } from '@/app/lib/sectionAccess';
 export async function GET(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'user');
   if (auth instanceof NextResponse) return auth;
@@ -18,6 +20,7 @@ export async function GET(request: NextRequest) {
   try {
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
       let query = `
         WITH filtered_orders AS (
           SELECT 
@@ -29,7 +32,8 @@ export async function GET(request: NextRequest) {
           WHERE 1=1
       `;
       const queryParams: (string | number)[] = [];
-      let paramIndex = 1;
+      query += appendSectionFilter(auth, request, 'wo.section', queryParams);
+      let paramIndex = queryParams.length + 1;
       if (status) {
         query += ` AND wo.status = $${paramIndex}`;
         queryParams.push(status);

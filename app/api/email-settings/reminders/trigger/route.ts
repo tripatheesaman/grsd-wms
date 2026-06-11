@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   const cronSecret = process.env.REMINDER_CRON_SECRET;
   const providedSecret = request.headers.get('x-reminder-secret');
   if (!(cronSecret && providedSecret && cronSecret === providedSecret)) {
-    const auth = requireRoleAtLeast(request, 'admin');
+    const auth = requireRoleAtLeast(request, 'incharge');
     if (auth instanceof NextResponse) return auth;
   }
 

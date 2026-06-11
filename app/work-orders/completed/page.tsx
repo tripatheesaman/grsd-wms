@@ -8,6 +8,7 @@ import { Card } from '@/app/components/Card';
 import { Button } from '@/app/components/Button';
 import { Input } from '@/app/components/Input';
 import { useAuth } from '@/app/components/AuthProvider';
+import { isStaffRole } from '@/app/lib/roles';
 
 interface CompletedWorkOrdersResponse {
   workOrders: WorkOrder[];
@@ -109,7 +110,7 @@ export default function CompletedWorkOrdersPage() {
   };
   const canGenerateReport = (workOrder: WorkOrder) => {
     if (!user) return false;
-    if (user.role === 'admin' || user.role === 'superadmin') {
+    if (isStaffRole(user.role)) {
       return workOrder.status === 'completed';
     }
     return workOrder.status === 'completed' && workOrder.completion_approved_by;
