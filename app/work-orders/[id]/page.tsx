@@ -12,8 +12,9 @@ import { useToast } from '../../components/ToastContext';
 import { validateAction, validateSparePart, validateFinding, validateCompletionDate } from '../../utils/validation';
 import { WorkOrder, Finding, Action, SparePart, Technician, ActionTechnician, ActionDate, Unit } from '../../types';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { WORK_TYPES } from '../../utils/workTypes';
+import { getWorkTypesForSection } from '../../utils/workTypes';
 import { toPastTenseTextLive } from '../../utils/textFormat';
+import { isStaffRole, canFinalApproveCompletion } from '@/app/lib/roles';
 
 function toTimeHHMM(value: string): string {
   if (!value) return '';
@@ -66,6 +67,7 @@ interface NewSparePart {
 
 export default function WorkOrderDetailPage() {
   const { user } = useAuth();
+  const availableWorkTypes = getWorkTypesForSection(user?.section);
   const [isEditingRejected, setIsEditingRejected] = useState(false);
   const params = useParams();
   const workOrderId = Number(params.id);
@@ -773,14 +775,20 @@ export default function WorkOrderDetailPage() {
   };
 
   const handleApproveCompletion = async () => {
+    if (!user) return;
     try {
-      const response = await apiClient.put<WorkOrder>(`/work-orders/${workOrderId}/approve-completion`, {
+      const endpoint = user.role === 'incharge'
+        ? `/work-orders/${workOrderId}/incharge-review`
+        : `/work-orders/${workOrderId}/approve-completion`;
+      const response = await apiClient.put<WorkOrder>(endpoint, {
         approved: true
       });
       if (response.success) {
         setShowCompleteModal(false);
         fetchWorkOrderDetails();
-        toast.showSuccess('Completion request approved successfully');
+        toast.showSuccess(user.role === 'incharge'
+          ? 'Completion request forwarded to admin'
+          : 'Completion request approved successfully');
         return;
       }
 
@@ -982,7 +990,7 @@ export default function WorkOrderDetailPage() {
           <p className="text-gray-600">Manage findings, actions, spare parts, and completion</p>
         </div>
         <div className="flex space-x-3">
-          {workOrder.status === 'pending' && user && (user.role === 'admin' || user.role === 'superadmin') && (
+          {workOrder.status === 'pending' && user && isStaffRole(user.role) && (
             <>
               {!isApprovingWorkOrder && !isEditingWorkOrder && (
                 <>
@@ -999,7 +1007,7 @@ export default function WorkOrderDetailPage() {
               )}
             </>
           )}
-          {(user?.role === 'superadmin' && (workOrder.status === 'ongoing' || workOrder.status === 'completed')) && (
+          {(user && isStaffRole(user.role) && (workOrder.status === 'ongoing' || workOrder.status === 'completed')) && (
             <>
               {!isEditingWorkOrder && (
                 <Button variant="primary" onClick={() => setIsEditingWorkOrder(true)}>
@@ -1013,7 +1021,10 @@ export default function WorkOrderDetailPage() {
               ✅ Request Completion
             </Button>
           )}
-          {workOrder.status === 'completion_requested' && user && (user.role === 'admin' || user.role === 'superadmin') && (
+          {workOrder.status === 'completion_requested' && user && isStaffRole(user.role) && (
+            (user.role === 'incharge' && (workOrder.completion_review_stage === 'incharge' || !workOrder.completion_review_stage)) ||
+            (canFinalApproveCompletion(user.role) && workOrder.completion_review_stage === 'admin')
+          ) && (
             <Button variant="primary" onClick={() => setShowCompleteModal(true)}>
               🔍 Review Completion Request
             </Button>
@@ -1181,7 +1192,7 @@ export default function WorkOrderDetailPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#08398F] focus:border-[#08398F]"
                 >
                 <option value="">Select work type</option>
-                {WORK_TYPES.map((type) => (
+                {availableWorkTypes.map((type) => (
                   <option key={type} value={type}>{type}</option>
                 ))}
                 </select>
@@ -1257,7 +1268,7 @@ export default function WorkOrderDetailPage() {
           <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex justify-between items-center mb-2">
             <span className="font-medium text-gray-700">Reference Document/Image:</span>
-            {user && (user.role === 'admin' || user.role === 'superadmin') && (
+            {user && isStaffRole(user.role) && (
               <div className="flex space-x-2">
                 <Button
                   size="sm"
@@ -1550,7 +1561,7 @@ export default function WorkOrderDetailPage() {
                                         ✅ Complete
                                       </Button>
                                     )}
-                                    {firstActionDate && firstActionDate.is_completed && (user?.role === 'admin' || user?.role === 'superadmin') && (
+                                    {firstActionDate && firstActionDate.is_completed && user && isStaffRole(user.role) && (
                                       <Button
                                         size="sm"
                                         variant="outline"
@@ -1710,7 +1721,9 @@ export default function WorkOrderDetailPage() {
                                     </div>
                                     <div className="text-xs text-gray-500 mt-1">
                                       Technicians: {actionDate.technicians && actionDate.technicians.length > 0
-                                        ? actionDate.technicians.map((t: ActionTechnician) => t.name).join(', ')
+                                        ? actionDate.technicians.map((t: ActionTechnician) =>
+                                            `${t.name}${t.approval_status === 'pending' ? ' (pending approval)' : ''}`
+                                          ).join(', ')
                                         : 'Not assigned'}
                                     </div>
                                   </div>
@@ -1779,7 +1792,7 @@ export default function WorkOrderDetailPage() {
                                             {(() => {
                                               const latestForAction = actionDates[action.id] && actionDates[action.id].length > 0 ? actionDates[action.id][0] : undefined;
                                               const isLatest = latestForAction ? latestForAction.id === actionDate.id : false;
-                                              const allowToggle = isLatest || (user && (user.role === 'admin' || user.role === 'superadmin') && actionDate.is_completed);
+                                              const allowToggle = isLatest || (user && isStaffRole(user.role) && actionDate.is_completed);
                                               return (
                                                 <>
                                                   <input
@@ -2237,11 +2250,25 @@ export default function WorkOrderDetailPage() {
                     onClick={handleApproveCompletion}
                     className="flex-1"
                   >
-                    ✅ Approve Completion
+                    {user?.role === 'incharge' ? '✅ Forward to Admin' : '✅ Approve Completion'}
                   </Button>
                   <Button 
                     variant="outline" 
-                    onClick={() => setShowCompleteModal(false)}
+                    onClick={async () => {
+                      const reason = window.prompt('Enter rejection reason:');
+                      if (!reason?.trim()) return;
+                      const endpoint = user?.role === 'incharge'
+                        ? `/work-orders/${workOrderId}/incharge-review`
+                        : `/work-orders/${workOrderId}/approve-completion`;
+                      const response = await apiClient.put(endpoint, { approved: false, rejection_reason: reason.trim() });
+                      if (response.success) {
+                        setShowCompleteModal(false);
+                        fetchWorkOrderDetails();
+                        toast.showSuccess('Completion request rejected');
+                      } else {
+                        toast.showError('Error', response.error || 'Failed to reject completion');
+                      }
+                    }}
                     className="flex-1"
                   >
                     ❌ Reject Completion

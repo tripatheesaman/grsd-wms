@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/database';
 import { SparePart, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertSparePartAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -26,6 +28,10 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertSparePartAccess(client, auth, sparePartId);
+      if (!access.ok) return access.response;
+
       const result = await client.query(`
         UPDATE spare_parts 
         SET part_name = $1, part_number = $2, quantity = $3, unit = $4, updated_at = CURRENT_TIMESTAMP
@@ -57,7 +63,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -70,6 +76,10 @@ export async function DELETE(
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertSparePartAccess(client, auth, sparePartId);
+      if (!access.ok) return access.response;
+
       const result = await client.query(
         'DELETE FROM spare_parts WHERE id = $1 RETURNING id',
         [sparePartId]

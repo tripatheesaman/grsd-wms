@@ -3,6 +3,9 @@ import pool from '../../lib/database';
 import { WorkOrder, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { toPresentTenseText, toUpperNormalized } from '@/app/utils/textFormat';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { appendSectionFilter, sectionForCreate } from '@/app/lib/sectionAccess';
+import { isWorkType } from '@/app/utils/workTypes';
 
 export async function POST(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'user');
@@ -24,9 +27,18 @@ export async function POST(request: NextRequest) {
 
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const section = sectionForCreate(auth, body.section);
+      if (!isWorkType(String(work_type ?? ''), section)) {
+        return NextResponse.json<ApiResponse<null>>({
+          success: false,
+          error: `Invalid work type for ${section} section`
+        }, { status: 400 });
+      }
+
       const existingOrder = await client.query(
-        'SELECT id, work_order_no FROM work_orders WHERE work_order_no = $1',
-        [work_order_no]
+        'SELECT id, work_order_no FROM work_orders WHERE work_order_no = $1 AND section = $2',
+        [work_order_no, section]
       );
 
       if (existingOrder.rows.length > 0) {
@@ -47,8 +59,8 @@ export async function POST(request: NextRequest) {
       const result = await client.query(`
         INSERT INTO work_orders (
           work_order_no, work_order_date, equipment_number, km_hrs,
-          requested_by, requested_by_id, work_type, job_allocation_time, description, reference_document, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          requested_by, requested_by_id, work_type, job_allocation_time, description, reference_document, status, section
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `, [
         work_order_no,
@@ -61,7 +73,8 @@ export async function POST(request: NextRequest) {
         job_allocation_time,
         toPresentTenseText((description ?? '').toString()),
         reference_document || null,
-        'pending'
+        'pending',
+        section,
       ]);
 
       const workOrder = result.rows[0];
@@ -93,20 +106,23 @@ export async function GET(request: NextRequest) {
 
     const client = await pool.connect();
     try {
-      let query = 'SELECT * FROM work_orders ORDER BY created_at DESC';
-      let params: string[] = [];
+      await ensureSectionSchema(client);
+      let query = 'SELECT * FROM work_orders WHERE 1=1';
+      const params: unknown[] = [];
+      query += appendSectionFilter(auth, request, 'section', params);
 
       if (status && status !== 'all') {
         if (status.includes(',')) {
           const statusArray = status.split(',').map(s => s.trim());
-          const placeholders = statusArray.map((_, index) => `$${index + 1}`).join(', ');
-          query = `SELECT * FROM work_orders WHERE status IN (${placeholders}) ORDER BY created_at DESC`;
-          params = statusArray;
+          const placeholders = statusArray.map((_, index) => `$${params.length + index + 1}`).join(', ');
+          query += ` AND status IN (${placeholders})`;
+          params.push(...statusArray);
         } else {
-          query = 'SELECT * FROM work_orders WHERE status = $1 ORDER BY created_at DESC';
-          params = [status];
+          params.push(status);
+          query += ` AND status = $${params.length}`;
         }
       }
+      query += ' ORDER BY created_at DESC';
 
       const result = await client.query(query, params);
       const workOrders = result.rows;

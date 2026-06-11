@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../../../lib/database';
 import { requireAuth, requireRoleAtLeast } from '@/app/api/middleware';
+import { roleAtLeast, technicianApprovalStatusForRole } from '@/app/lib/roles';
 
 
 export async function PUT(
@@ -56,8 +57,8 @@ export async function PUT(
           return NextResponse.json({ success: false, error: 'Action date not found' }, { status: 404 });
         }
         const prev = existing.rows[0];
-        if (prev.is_completed === true && !(user.role === 'admin' || user.role === 'superadmin')) {
-          return NextResponse.json({ success: false, error: 'Only admins can revert completion' }, { status: 403 });
+        if (prev.is_completed === true && !roleAtLeast(user.role, 'incharge')) {
+          return NextResponse.json({ success: false, error: 'Only staff can revert completion' }, { status: 403 });
         }
       }
         if (action_date !== undefined) {
@@ -96,12 +97,13 @@ export async function PUT(
           : { rows: [] as Array<{ id: number; name: string; staff_id: string }> };
 
         await client.query(`DELETE FROM action_date_technicians WHERE action_date_id = $1`, [actionDateId]);
+        const approvalStatus = technicianApprovalStatusForRole(user.role);
         for (const tech of techResult.rows) {
           await client.query(
-            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id, approval_status)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
-            [actionDateId, tech.id, tech.name, tech.staff_id]
+            [actionDateId, tech.id, tech.name, tech.staff_id, approvalStatus]
           );
         }
       }
@@ -119,7 +121,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; dateId: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'incharge');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id, dateId } = await params;

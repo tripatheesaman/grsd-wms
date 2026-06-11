@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../../lib/database';
 import { requireAuth } from '@/app/api/middleware';
 import { ApiResponse } from '../../../../types';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertActionAccess } from '@/app/lib/sectionAccess';
+import { roleAtLeast, technicianApprovalStatusForRole } from '@/app/lib/roles';
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -9,8 +12,13 @@ export async function GET(
   const auth = requireAuth(request);
   if (auth instanceof NextResponse) return auth;
   const { id: actionId } = await params;
+  const actionIdNum = parseInt(actionId, 10);
   const client = await pool.connect();
   try {
+    await ensureSectionSchema(client);
+    const access = await assertActionAccess(client, auth, actionIdNum);
+    if (!access.ok) return access.response;
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS action_date_technicians (
         id SERIAL PRIMARY KEY,
@@ -34,17 +42,18 @@ export async function GET(
                       'technician_id', tech_rows.technician_id,
                       'name', tech_rows.name,
                       'staff_id', tech_rows.staff_id,
+                      'approval_status', tech_rows.approval_status,
                       'created_at', tech_rows.created_at
                     ) ORDER BY tech_rows.created_at ASC
                   )
                   FROM (
-                    SELECT adt.id, adt.technician_id, adt.name, adt.staff_id, adt.created_at
+                    SELECT adt.id, adt.technician_id, adt.name, adt.staff_id, adt.approval_status, adt.created_at
                     FROM action_date_technicians adt
                     WHERE adt.action_date_id = ad.id
 
                     UNION ALL
 
-                    SELECT at.id, at.technician_id, at.name, at.staff_id, at.created_at
+                    SELECT at.id, at.technician_id, at.name, at.staff_id, COALESCE(at.approval_status, 'approved') AS approval_status, at.created_at
                     FROM action_technicians at
                     WHERE at.action_id = ad.action_id
                       AND NOT EXISTS (
@@ -103,6 +112,10 @@ export async function POST(
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertActionAccess(client, auth, parseInt(actionId, 10));
+      if (!access.ok) return access.response;
+
       const prevRes = await client.query(
         `SELECT id, action_date, end_time FROM action_dates WHERE action_id = $1 ORDER BY (action_date::date) DESC LIMIT 1`,
         [actionId]
@@ -145,13 +158,14 @@ export async function POST(
           `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[])`,
           [validTechnicianIds]
         );
+        const approvalStatus = technicianApprovalStatusForRole(auth.user.role);
 
         for (const tech of techResult.rows) {
           await client.query(
-            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id, approval_status)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
-            [inserted.id, tech.id, tech.name, tech.staff_id]
+            [inserted.id, tech.id, tech.name, tech.staff_id, approvalStatus]
           );
         }
       }
@@ -203,8 +217,8 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      if (is_completed === false && !(user.role === 'admin' || user.role === 'superadmin')) {
-        return NextResponse.json({ success: false, error: 'Only admins can revert completion' }, { status: 403 });
+      if (is_completed === false && !roleAtLeast(user.role, 'incharge')) {
+        return NextResponse.json({ success: false, error: 'Only staff can revert completion' }, { status: 403 });
       }
         if (is_completed === true) {
           const targetRes = await client.query(

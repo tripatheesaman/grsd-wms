@@ -34,7 +34,12 @@ export async function POST(request: NextRequest) {
         }, { status: 401 });
       }
       const token = jwt.sign(
-        { userId: user.id, username: user.username, role: user.role },
+        {
+          userId: user.id,
+          username: user.username,
+          role: user.role,
+          section: user.section || 'workshops',
+        },
         process.env.JWT_SECRET || 'fallback-secret',
         { expiresIn: '24h' }
       );

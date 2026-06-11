@@ -4,6 +4,8 @@ import { ApiResponse } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { ExcelHelper, formatTime, formatDate } from '@/app/utils/excel';
 import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 import path from 'path';
 
 export async function GET(request: NextRequest) {
@@ -22,6 +24,10 @@ export async function GET(request: NextRequest) {
 
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
+      const access = await assertWorkOrderAccess(client, auth, parseInt(workOrderId, 10));
+      if (!access.ok) return access.response;
+
       const workOrderResult = await client.query(`
         SELECT 
           wo.*,
