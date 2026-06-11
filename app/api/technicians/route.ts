@@ -2,25 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../lib/database';
 import { Technician, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { appendSectionFilter, assertTechnicianAccess, sectionForCreate } from '@/app/lib/sectionAccess';
 
 export async function GET(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'user');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const params: unknown[] = [];
-      let query = `
-        SELECT id, name, staff_id, designation, is_available, section, created_at, updated_at
-        FROM technicians
-        WHERE 1=1
-      `;
-      query += appendSectionFilter(auth, request, 'section', params);
-      query += ' ORDER BY name ASC';
-      const result = await client.query(query, params);
+      const result = await client.query(`
+        SELECT id, name, staff_id, designation, is_available, created_at, updated_at
+        FROM technicians 
+        ORDER BY name ASC
+      `);
       return NextResponse.json<ApiResponse<Technician[]>>({
         success: true,
         data: result.rows
@@ -38,7 +31,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();
@@ -49,24 +42,22 @@ export async function POST(request: NextRequest) {
         error: 'Name and Staff ID are required'
       }, { status: 400 });
     }
-    const section = sectionForCreate(auth, body.section);
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
       const existingCheck = await client.query(`
-        SELECT id FROM technicians WHERE staff_id = $1 AND section = $2
-      `, [staff_id, section]);
+        SELECT id FROM technicians WHERE staff_id = $1
+      `, [staff_id]);
       if (existingCheck.rows.length > 0) {
         return NextResponse.json<ApiResponse<null>>({
           success: false,
-          error: 'Staff ID already exists in this section'
+          error: 'Staff ID already exists'
         }, { status: 400 });
       }
       const result = await client.query(`
-        INSERT INTO technicians (name, staff_id, designation, is_available, section)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO technicians (name, staff_id, designation, is_available)
+        VALUES ($1, $2, $3, $4)
         RETURNING *
-      `, [name, staff_id, designation, is_available, section]);
+      `, [name, staff_id, designation, is_available]);
       return NextResponse.json<ApiResponse<Technician>>({
         success: true,
         data: result.rows[0]

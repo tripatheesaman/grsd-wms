@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import type { Section } from '@/app/lib/sections';
-import { ROLE_HIERARCHY, type Role } from '@/app/lib/roles';
-
 export interface AuthUser {
   userId: number;
   username: string;
-  role: Role;
-  section?: Section;
+  role: 'superadmin' | 'admin' | 'user';
 }
-
 export function requireAuth(request: NextRequest): { user: AuthUser } | NextResponse {
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
   let token: string | null = null;
@@ -33,13 +28,13 @@ export function requireAuth(request: NextRequest): { user: AuthUser } | NextResp
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 }
-
-export function requireRoleAtLeast(request: NextRequest, minRole: Role) {
+export function requireRoleAtLeast(request: NextRequest, minRole: 'user' | 'admin' | 'superadmin') {
   const auth = requireAuth(request);
   if (auth instanceof NextResponse) return auth;
-  const userIndex = ROLE_HIERARCHY.indexOf(auth.user.role);
-  const minIndex = ROLE_HIERARCHY.indexOf(minRole);
-  if (userIndex < 0 || userIndex < minIndex) {
+  const hierarchy = ['user', 'admin', 'superadmin'] as const;
+  const userIndex = hierarchy.indexOf(auth.user.role);
+  const minIndex = hierarchy.indexOf(minRole);
+  if (userIndex < minIndex) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
   }
   return auth;

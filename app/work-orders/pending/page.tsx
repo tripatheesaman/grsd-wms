@@ -9,7 +9,6 @@ import { Card } from '@/app/components/Card';
 import { Button } from '@/app/components/Button';
 import { Input } from '@/app/components/Input';
 import { useAuth } from '@/app/components/AuthProvider';
-import { isStaffRole } from '@/app/lib/roles';
 
 export default function PendingWorkOrdersPage() {
   const router = useRouter();
@@ -342,7 +341,7 @@ export default function PendingWorkOrdersPage() {
                   </div>
                   {}
                   <div className="flex flex-col space-y-2 lg:ml-6">
-                    {workOrder.status === 'pending' && user && isStaffRole(user.role) && (
+                    {workOrder.status === 'pending' && (user?.role === 'admin' || user?.role === 'superadmin') && (
                       <Button
                         size="sm"
                         onClick={() => router.push(`/work-orders/${workOrder.id}?action=approve`)}

@@ -4,8 +4,6 @@ import { WorkOrder, ApiResponse } from '../../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { sendCompletionRequestEmail } from '@/app/lib/email';
 import { publicOriginFromRequest } from '@/app/utils/publicUrl';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,13 +29,9 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertWorkOrderAccess(client, auth, workOrderId);
-      if (!access.ok) return access.response;
-
       const workOrderQuery = await client.query(
         `
-          SELECT wo.work_order_date, wo.status, wo.work_order_no, wo.requested_by, wo.section,
+          SELECT wo.work_order_date, wo.status, wo.work_order_no, wo.requested_by,
                  u.first_name, u.last_name
           FROM work_orders wo
           LEFT JOIN users u ON u.id = wo.requested_by_id
@@ -126,7 +120,6 @@ export async function PUT(
             data: { missing_end_times: missingRows.rows }
           }, { status: 400 });
         }
-      const reviewStage = auth.user.role === 'user' ? 'incharge' : 'admin';
       const result = await client.query(`
         UPDATE work_orders 
         SET 
@@ -134,31 +127,24 @@ export async function PUT(
           work_completed_date = $1, 
           completion_requested_by = $2,
           completion_requested_at = CURRENT_TIMESTAMP,
-          completion_review_stage = $3,
-          incharge_reviewed_by = NULL,
-          incharge_reviewed_at = NULL,
-          incharge_rejection_reason = NULL,
-          completion_rejection_reason = NULL,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $4
+        WHERE id = $3
         RETURNING *
-      `, [work_completed_date, auth.user.userId, reviewStage, workOrderId]);
+      `, [work_completed_date, auth.user.userId, workOrderId]);
       const updatedWorkOrder = result.rows[0];
       const requestedByName =
         [workOrder.first_name, workOrder.last_name].filter(Boolean).join(' ').trim() ||
         workOrder.requested_by ||
         auth.user.username;
-      if (workOrder.section === 'workshops') {
-        sendCompletionRequestEmail({
-          workOrderId,
-          workOrderNo: workOrder.work_order_no,
-          requestedByName,
-          completionDate: work_completed_date,
-          appBaseUrl: publicOriginFromRequest(request),
-        }).catch((emailError) => {
-          console.error('Send completion request email error:', emailError);
-        });
-      }
+      sendCompletionRequestEmail({
+        workOrderId,
+        workOrderNo: workOrder.work_order_no,
+        requestedByName,
+        completionDate: work_completed_date,
+        appBaseUrl: publicOriginFromRequest(request),
+      }).catch((emailError) => {
+        console.error('Send completion request email error:', emailError);
+      });
       return NextResponse.json<ApiResponse<WorkOrder>>({
         success: true,
         data: updatedWorkOrder

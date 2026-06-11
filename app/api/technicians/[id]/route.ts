@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/database';
 import { Technician, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertTechnicianAccess } from '@/app/lib/sectionAccess';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -22,12 +20,8 @@ export async function GET(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertTechnicianAccess(client, auth, technicianId);
-      if (!access.ok) return access.response;
-
       const result = await client.query(`
-        SELECT id, name, staff_id, designation, is_available, section, created_at, updated_at
+        SELECT id, name, staff_id, designation, is_available, created_at, updated_at
         FROM technicians 
         WHERE id = $1
       `, [technicianId]);
@@ -57,7 +51,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -78,13 +72,9 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertTechnicianAccess(client, auth, technicianId);
-      if (!access.ok) return access.response;
-
       const existingCheck = await client.query(`
-        SELECT id FROM technicians WHERE staff_id = $1 AND id != $2 AND section = $3
-      `, [staff_id, technicianId, access.section]);
+        SELECT id FROM technicians WHERE staff_id = $1 AND id != $2
+      `, [staff_id, technicianId]);
       if (existingCheck.rows.length > 0) {
         return NextResponse.json<ApiResponse<null>>({
           success: false,
@@ -123,7 +113,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -136,10 +126,6 @@ export async function DELETE(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertTechnicianAccess(client, auth, technicianId);
-      if (!access.ok) return access.response;
-
       const workOrderCheck = await client.query(`
         SELECT COUNT(*) as count FROM job_performed_by WHERE staff_id = (
           SELECT staff_id FROM technicians WHERE id = $1

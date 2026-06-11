@@ -1,8 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { User, Section } from '../types';
-import { SECTIONS, sectionLabel } from '@/app/lib/sections';
-import { ROLE_LABELS } from '@/app/lib/roles';
+import { User } from '../types';
 import { apiClient } from '../utils/api';
 import { useToast } from '../components/ToastContext';
 import { Card } from '../components/Card';
@@ -15,8 +13,7 @@ interface UserFormData {
   first_name: string;
   last_name: string;
   password: string;
-  role: 'user' | 'incharge' | 'admin' | 'superadmin';
-  section: Section;
+  role: 'user' | 'admin' | 'superadmin';
 }
 export default function UsersPage() {
   const { user } = useAuth();
@@ -30,8 +27,7 @@ export default function UsersPage() {
     first_name: '',
     last_name: '',
     password: '',
-    role: 'user',
-    section: 'workshops',
+    role: 'user'
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -60,8 +56,7 @@ export default function UsersPage() {
       first_name: '',
       last_name: '',
       password: '',
-      role: 'user',
-      section: 'workshops',
+      role: 'user'
     });
     setEditingUser(null);
     setShowForm(false);
@@ -83,7 +78,6 @@ export default function UsersPage() {
           first_name: formData.first_name,
           last_name: formData.last_name,
           role: formData.role,
-          section: formData.section,
           ...(formData.password.trim() && { password: formData.password })
         };
         const response = await apiClient.put<User>(`/users/${editingUser.id}`, updateData);
@@ -115,8 +109,7 @@ export default function UsersPage() {
       first_name: user.first_name,
       last_name: user.last_name,
       password: '', 
-      role: user.role,
-      section: user.section || 'workshops',
+      role: user.role
     });
     setShowForm(true);
   };
@@ -211,29 +204,13 @@ export default function UsersPage() {
               </label>
               <select
                 value={formData.role}
-                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as UserFormData['role'] }))}
+                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as 'user' | 'admin' | 'superadmin' }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#08398F] focus:border-[#08398F]"
                 required
               >
                 <option value="user">User</option>
-                <option value="incharge">Incharge</option>
                 <option value="admin">Admin</option>
                 <option value="superadmin">Super Admin</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Section
-              </label>
-              <select
-                value={formData.section}
-                onChange={(e) => setFormData(prev => ({ ...prev, section: e.target.value as Section }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#08398F] focus:border-[#08398F]"
-                required
-              >
-                {SECTIONS.map((s) => (
-                  <option key={s} value={s}>{sectionLabel(s)}</option>
-                ))}
               </select>
             </div>
             <div className="flex space-x-3">
@@ -267,9 +244,6 @@ export default function UsersPage() {
                     Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Section
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -294,15 +268,10 @@ export default function UsersPage() {
                           ? 'bg-purple-100 text-purple-800'
                           : userItem.role === 'admin'
                           ? 'bg-blue-100 text-blue-800'
-                          : userItem.role === 'incharge'
-                          ? 'bg-amber-100 text-amber-800'
                           : 'bg-green-100 text-green-800'
                       }`}>
-                        {ROLE_LABELS[userItem.role] || userItem.role}
+                        {userItem.role.charAt(0).toUpperCase() + userItem.role.slice(1)}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{sectionLabel(userItem.section)}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(userItem.created_at).toLocaleDateString('en-GB')}

@@ -5,8 +5,6 @@ import { requireRoleAtLeast } from '@/app/api/middleware';
 import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { appendSectionFilter } from '@/app/lib/sectionAccess';
 export async function POST(request: NextRequest) {
   const auth = requireRoleAtLeast(request, 'user');
   if (auth instanceof NextResponse) return auth;
@@ -14,7 +12,6 @@ export async function POST(request: NextRequest) {
     const { searchTerm, dateFrom, dateTo } = await request.json();
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
       let query = `
         SELECT 
           wo.*,
@@ -33,12 +30,8 @@ export async function POST(request: NextRequest) {
         LEFT JOIN job_performed_by jpb ON wo.id = jpb.work_order_id
       `;
       const whereConditions = [];
-      const queryParams: unknown[] = [];
-      const sectionClause = appendSectionFilter(auth, request, 'wo.section', queryParams);
-      if (sectionClause) {
-        whereConditions.push(sectionClause.replace(/^\sAND\s/, ''));
-      }
-      let paramCount = queryParams.length;
+      const queryParams = [];
+      let paramCount = 0;
       if (searchTerm) {
         paramCount++;
         whereConditions.push(`(

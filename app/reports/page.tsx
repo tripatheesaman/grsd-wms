@@ -8,11 +8,6 @@ import { Card } from '@/app/components/Card';
 import { Button } from '@/app/components/Button';
 import { Input } from '@/app/components/Input';
 import { useAuth } from '@/app/components/AuthProvider';
-import { isStaffRole } from '@/app/lib/roles';
-import {
-  SuperadminSectionFilter,
-  useSuperadminSectionFilter,
-} from '@/app/components/SuperadminSectionFilter';
 interface ReportsResponse {
   workOrders: WorkOrder[];
   total: number;
@@ -23,8 +18,6 @@ export default function ReportsPage() {
   const router = useRouter();
   const toast = useToast();
   const { user } = useAuth();
-  const { filter: sectionFilter, setFilter: setSectionFilter, applySectionParam, hydrated } =
-    useSuperadminSectionFilter();
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -37,7 +30,6 @@ export default function ReportsPage() {
     limit: 20
   });
   const fetchWorkOrders = useCallback(async () => {
-    if (!hydrated) return;
     setLoading(true);
     try {
       const queryParams = new URLSearchParams();
@@ -46,7 +38,6 @@ export default function ReportsPage() {
           queryParams.append(key, value.toString());
         }
       });
-      applySectionParam(queryParams);
       const response = await apiClient.get<ReportsResponse>(`/work-orders/completed?${queryParams}`);
       if (response.success && response.data) {
         setWorkOrders(response.data.workOrders);
@@ -61,7 +52,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, toast, hydrated, applySectionParam]);
+  }, [filters, toast]);
   useEffect(() => {
     fetchWorkOrders();
   }, [filters, fetchWorkOrders]);
@@ -117,7 +108,7 @@ export default function ReportsPage() {
   };
   const canGenerateReport = (workOrder: WorkOrder) => {
     if (!user) return false;
-    if (isStaffRole(user.role)) {
+    if (user.role === 'admin' || user.role === 'superadmin') {
       return workOrder.status === 'completed';
     }
     return workOrder.status === 'completed' && workOrder.completion_approved_by;
@@ -155,8 +146,7 @@ export default function ReportsPage() {
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <SuperadminSectionFilter value={sectionFilter} onChange={setSectionFilter} />
+          <div className="flex space-x-3">
             <Button 
               variant="outline" 
               onClick={() => setShowFilters(!showFilters)}

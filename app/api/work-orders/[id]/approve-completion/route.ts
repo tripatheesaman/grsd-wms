@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../../lib/database';
 import { WorkOrder, ApiResponse } from '../../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'admin');
+  const auth = requireRoleAtLeast(request, 'superadmin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -29,12 +27,8 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertWorkOrderAccess(client, auth, workOrderId);
-      if (!access.ok) return access.response;
-
       const workOrderQuery = await client.query(`
-        SELECT status, completion_review_stage, completion_requested_by, work_completed_date
+        SELECT status, completion_requested_by, work_completed_date
         FROM work_orders 
         WHERE id = $1
       `, [workOrderId]);
@@ -49,13 +43,6 @@ export async function PUT(
         return NextResponse.json<ApiResponse<null>>({
           success: false,
           error: 'No completion request pending for this work order'
-        }, { status: 400 });
-      }
-      const reviewStage = workOrder.completion_review_stage || 'admin';
-      if (reviewStage !== 'admin') {
-        return NextResponse.json<ApiResponse<null>>({
-          success: false,
-          error: 'This completion request must be reviewed by the incharge before admin approval'
         }, { status: 400 });
       }
       let updateQuery: string;
@@ -98,7 +85,6 @@ export async function PUT(
           UPDATE work_orders 
           SET 
             status = 'ongoing', 
-            completion_review_stage = NULL,
             completion_rejection_reason = $1,
             updated_at = CURRENT_TIMESTAMP
           WHERE id = $2

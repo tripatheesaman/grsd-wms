@@ -9,7 +9,7 @@ services:
     volumes:
       - /srv/grsd-wms/db/postgres-data:/var/lib/postgresql/data
     networks:
-      - wms-network
+      - wms_network
     ports:
       - "5434:5432"
     healthcheck:

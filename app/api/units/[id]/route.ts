@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/database';
 import { ApiResponse, Unit } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertUnitAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -26,10 +24,6 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertUnitAccess(client, auth, unitId);
-      if (!access.ok) return access.response;
-
       const result = await client.query(
         'UPDATE units SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, name, created_at, updated_at',
         [name, unitId]
@@ -49,7 +43,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -59,10 +53,6 @@ export async function DELETE(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertUnitAccess(client, auth, unitId);
-      if (!access.ok) return access.response;
-
       const inUse = await client.query('SELECT 1 FROM spare_parts WHERE unit = (SELECT name FROM units WHERE id = $1) LIMIT 1', [unitId]);
       if (inUse.rows.length > 0) {
         return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Unit is in use and cannot be deleted' }, { status: 409 });

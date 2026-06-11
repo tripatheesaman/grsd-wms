@@ -2,15 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/app/lib/database';
 import { ApiResponse, WorkOrder } from '@/app/types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertWorkOrderAccess } from '@/app/lib/sectionAccess';
 import { createWorkOrderApprovalNotification } from '@/app/lib/notifications';
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
   const workOrderId = parseInt(id);
@@ -23,10 +21,6 @@ export async function PUT(
 
   const client = await pool.connect();
   try {
-    await ensureSectionSchema(client);
-    const access = await assertWorkOrderAccess(client, auth, workOrderId);
-    if (!access.ok) return access.response;
-
     const updateFields = [
       'status = $1',
       'approved_by = $2', 
