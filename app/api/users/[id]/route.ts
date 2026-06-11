@@ -3,6 +3,8 @@ import pool from '../../../lib/database';
 import { User, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import bcrypt from 'bcryptjs';
+import { ensureSectionSchema } from '@/app/lib/ensureSections';
+import { normalizeSection } from '@/app/lib/sections';
 
 export async function GET(
   request: NextRequest,
@@ -22,7 +24,7 @@ export async function GET(
     const client = await pool.connect();
     try {
       const result = await client.query(`
-        SELECT id, username, first_name, last_name, role, created_at, updated_at
+        SELECT id, username, first_name, last_name, role, section, created_at, updated_at
         FROM users 
         WHERE id = $1
       `, [userId]);
@@ -58,7 +60,7 @@ export async function PUT(
     const { id } = await params;
     const userId = parseInt(id);
     const body = await request.json();
-    const { username, first_name, last_name, password, role } = body;
+    const { username, first_name, last_name, password, role, section: bodySection } = body;
     if (isNaN(userId)) {
       return NextResponse.json<ApiResponse<null>>({
         success: false,
@@ -71,14 +73,15 @@ export async function PUT(
         error: 'Username, first name, and last name are required'
       }, { status: 400 });
     }
-    if (role && !['user', 'admin', 'superadmin'].includes(role)) {
+    if (role && !['user', 'incharge', 'admin', 'superadmin'].includes(role)) {
       return NextResponse.json<ApiResponse<null>>({
         success: false,
-        error: 'Invalid role. Must be user, admin, or superadmin'
+        error: 'Invalid role. Must be user, incharge, admin, or superadmin'
       }, { status: 400 });
     }
     const client = await pool.connect();
     try {
+      await ensureSectionSchema(client);
       const existingCheck = await client.query(`
         SELECT id FROM users WHERE username = $1 AND id != $2
       `, [username, userId]);
@@ -102,13 +105,19 @@ export async function PUT(
         updateValues.push(hashedPassword);
         paramIndex++;
       }
+      const nextSection = normalizeSection(bodySection);
+      if (nextSection) {
+        updateFields.push(`section = $${paramIndex}`);
+        updateValues.push(nextSection);
+        paramIndex++;
+      }
       updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
       updateValues.push(userId);
       const updateQuery = `
         UPDATE users 
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
-        RETURNING id, username, first_name, last_name, role, created_at, updated_at
+        RETURNING id, username, first_name, last_name, role, section, created_at, updated_at
       `;
       const result = await client.query(updateQuery, updateValues);
       if (result.rows.length === 0) {

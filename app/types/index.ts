@@ -1,9 +1,16 @@
+export type Section = 'workshops' | 'nem';
+
+import type { Role } from '@/app/lib/roles';
+
+export type { Role };
+
 export interface User {
   id: number;
   username: string;
   first_name: string;
   last_name: string;
-  role: 'superadmin' | 'admin' | 'user';
+  role: Role;
+  section?: Section;
   password_hash: string;
   first_login: boolean;
   created_at: string;
@@ -12,6 +19,7 @@ export interface User {
 
 export interface WorkOrder {
   id: number;
+  section?: Section;
   work_order_no: string;
   work_order_date: string;
   equipment_number: string;
@@ -27,6 +35,10 @@ export interface WorkOrder {
   completion_approved_by?: number;
   completion_approved_at?: string;
   completion_rejection_reason?: string;
+  completion_review_stage?: 'incharge' | 'admin';
+  incharge_reviewed_by?: number;
+  incharge_reviewed_at?: string;
+  incharge_rejection_reason?: string;
   completion_approved_by_name?: string;
   completion_requested_by_name?: string;
   reference_document?: string;
@@ -50,6 +62,7 @@ export interface ActionTechnician {
   technician_id?: number;
   name: string;
   staff_id: string;
+  approval_status?: 'pending' | 'approved' | 'rejected';
   created_at: string;
 }
 
@@ -94,6 +107,7 @@ export interface SparePart {
 export interface Unit {
   id: number;
   name: string;
+  section?: Section;
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +116,7 @@ export interface Technician {
   id: number;
   name: string;
   staff_id: string;
+  section?: Section;
   designation?: string;
   level?: string;
   is_available: boolean;

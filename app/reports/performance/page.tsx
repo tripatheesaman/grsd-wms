@@ -1,26 +1,34 @@
 'use client';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '@/app/components/AuthProvider';
+import { isStaffRole } from '@/app/lib/roles';
 import { apiClient } from '@/app/utils/api';
 import { TechnicianPerformance } from '@/app/types';
 import { formatTechnicianNameWithDesignation } from '@/app/utils/textFormat';
 import Link from 'next/link';
+import {
+  SuperadminSectionFilter,
+  useSuperadminSectionFilter,
+} from '@/app/components/SuperadminSectionFilter';
 export default function PerformanceReportPage() {
   const { user } = useAuth();
+  const { filter: sectionFilter, setFilter: setSectionFilter, applySectionParam, hydrated } =
+    useSuperadminSectionFilter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TechnicianPerformance[]>([]);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
-  const canView = user && (user.role === 'admin' || user.role === 'superadmin');
+  const canView = user && isStaffRole(user.role);
   const fetchData = useCallback(async () => {
-    if (!canView) return;
+    if (!canView || !hydrated) return;
     setLoading(true);
     setError(null);
     try {
       const qs = new URLSearchParams();
       if (dateFrom) qs.set('date_from', dateFrom);
       if (dateTo) qs.set('date_to', dateTo);
+      applySectionParam(qs);
       const res = await apiClient.get<TechnicianPerformance[]>(`/reports/technician-performance${qs.toString() ? `?${qs.toString()}` : ''}`);
       if (res.success && Array.isArray(res.data)) {
         setData(res.data);
@@ -32,7 +40,7 @@ export default function PerformanceReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [canView, dateFrom, dateTo]);
+  }, [canView, dateFrom, dateTo, hydrated, applySectionParam]);
   useEffect(() => {
     fetchData();
   }, [fetchData]);
@@ -42,6 +50,7 @@ export default function PerformanceReportPage() {
     const qs = new URLSearchParams();
     if (dateFrom) qs.set('date_from', dateFrom);
     if (dateTo) qs.set('date_to', dateTo);
+    applySectionParam(qs);
     qs.set('export', 'excel');
     const endpoint = `/reports/technician-performance?${qs.toString()}`;
     const res = await apiClient.getBlob(endpoint);
@@ -70,6 +79,7 @@ export default function PerformanceReportPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-end gap-4 flex-wrap">
+        <SuperadminSectionFilter value={sectionFilter} onChange={setSectionFilter} />
         <div>
           <label className="block text-sm font-medium text-gray-700">From</label>
           <input type="date" className="mt-1 block border rounded px-3 py-2" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
