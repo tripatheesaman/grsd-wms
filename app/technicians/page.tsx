@@ -7,7 +7,6 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { useAuth } from '../components/AuthProvider';
-import { isStaffRole } from '@/app/lib/roles';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 interface TechnicianFormData {
   name: string;
@@ -45,7 +44,7 @@ export default function TechniciansPage() {
     }
   }, [toast]);
   useEffect(() => {
-    if (user && isStaffRole(user.role)) {
+    if (user && (user.role === 'admin' || user.role === 'superadmin')) {
       fetchTechnicians();
     }
   }, [user, fetchTechnicians]);

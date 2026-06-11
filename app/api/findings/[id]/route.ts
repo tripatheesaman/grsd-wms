@@ -5,13 +5,11 @@ import { requireRoleAtLeast } from '@/app/api/middleware';
 import { unlink } from 'fs/promises';
 import { join } from 'path';
 import { toPastTenseText } from '@/app/utils/textFormat';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertFindingAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'user');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -26,10 +24,6 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertFindingAccess(client, auth, findingId);
-      if (!access.ok) return access.response;
-
       const existing = await client.query('SELECT reference_image FROM findings WHERE id = $1', [findingId]);
       const oldPath: string | null = existing.rows[0]?.reference_image || null;
       const result = await client.query(`
@@ -69,7 +63,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -82,10 +76,6 @@ export async function DELETE(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertFindingAccess(client, auth, findingId);
-      if (!access.ok) return access.response;
-
       const existing = await client.query('SELECT reference_image FROM findings WHERE id = $1', [findingId]);
       const oldPath: string | null = existing.rows[0]?.reference_image || null;
       const result = await client.query(

@@ -8,16 +8,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
 import Image from 'next/image';
 import nacIcon from '@/public/nac_icon.png';
-import {
-  SuperadminSectionFilter,
-  useSuperadminSectionFilter,
-} from '../components/SuperadminSectionFilter';
-import { isStaffRole } from '@/app/lib/roles';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { filter: sectionFilter, setFilter: setSectionFilter, applySectionParam, hydrated } =
-    useSuperadminSectionFilter();
   const [stats, setStats] = useState<DashboardStats>({
     ongoing: 0,
     completed: 0,
@@ -28,16 +21,11 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!hydrated) return;
-
     const fetchStats = async () => {
       try {
         setLoading(true);
         setError(null);
-        const qs = new URLSearchParams();
-        applySectionParam(qs);
-        const suffix = qs.toString() ? `?${qs.toString()}` : '';
-        const response = await apiClient.get<DashboardStats>(`/dashboard/stats${suffix}`);
+        const response = await apiClient.get<DashboardStats>('/dashboard/stats');
         if (response.success && response.data) {
           setStats(response.data);
         } else {
@@ -53,32 +41,29 @@ export default function DashboardPage() {
     const timeoutId = setTimeout(() => {
       setError('Request timed out. Please try again.');
       setLoading(false);
-    }, 5000);
+    }, 5000); 
 
     fetchStats().finally(() => {
       clearTimeout(timeoutId);
     });
 
     return () => clearTimeout(timeoutId);
-  }, [hydrated, sectionFilter, applySectionParam]);
+  }, []);
 
   const Header = (
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-      <div>
-        <div className="flex items-center space-x-3 mb-2">
-          <Image
-            src={nacIcon}
-            alt="NAC Icon"
-            width={32}
-            height={32}
-            className="w-8 h-8 object-contain"
-            priority
-          />
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        </div>
-        <p className="text-gray-600">Welcome to your work order management dashboard</p>
+    <div>
+      <div className="flex items-center space-x-3 mb-2">
+        <Image 
+          src={nacIcon} 
+          alt="NAC Icon" 
+          width={32}
+          height={32}
+          className="w-8 h-8 object-contain"
+          priority
+        />
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
       </div>
-      <SuperadminSectionFilter value={sectionFilter} onChange={setSectionFilter} />
+      <p className="text-gray-600">Welcome to your work order management dashboard</p>
     </div>
   );
 
@@ -141,7 +126,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {user && isStaffRole(user.role) && (
+      {user && (user.role === 'admin' || user.role === 'superadmin') && (
         <Card className="bg-yellow-50 border-yellow-200">
           <div className="flex items-center justify-between">
             <div>

@@ -3,11 +3,8 @@ import pool from '../../lib/database';
 import { Action, ApiResponse } from '../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { toPastTenseText } from '@/app/utils/textFormat';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertFindingAccess } from '@/app/lib/sectionAccess';
-import { technicianApprovalStatusForRole } from '@/app/lib/roles';
 export async function POST(request: NextRequest) {
-  const auth = requireRoleAtLeast(request, 'user');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await request.json();
@@ -73,10 +70,6 @@ export async function POST(request: NextRequest) {
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertFindingAccess(client, auth, finding_id);
-      if (!access.ok) return access.response;
-
       const findingCheck = await client.query(
         'SELECT id FROM findings WHERE id = $1',
         [finding_id]
@@ -158,16 +151,15 @@ export async function POST(request: NextRequest) {
         : [];
       if (actionDateId && validTechnicianIds.length > 0) {
         const techResult = await client.query(
-          `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[]) AND section = $2`,
-          [validTechnicianIds, access.section]
+          `SELECT id, name, staff_id FROM technicians WHERE id = ANY($1::int[])`,
+          [validTechnicianIds]
         );
-        const approvalStatus = technicianApprovalStatusForRole(auth.user.role);
         for (const tech of techResult.rows) {
           await client.query(
-            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id, approval_status)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO action_date_technicians (action_date_id, technician_id, name, staff_id)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (action_date_id, staff_id) DO NOTHING`,
-            [actionDateId, tech.id, tech.name, tech.staff_id, approvalStatus]
+            [actionDateId, tech.id, tech.name, tech.staff_id]
           );
         }
       }

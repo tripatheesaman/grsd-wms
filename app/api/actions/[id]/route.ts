@@ -3,13 +3,11 @@ import pool from '../../../lib/database';
 import { Action, ApiResponse } from '../../../types';
 import { requireRoleAtLeast } from '@/app/api/middleware';
 import { toPastTenseText } from '@/app/utils/textFormat';
-import { ensureSectionSchema } from '@/app/lib/ensureSections';
-import { assertActionAccess } from '@/app/lib/sectionAccess';
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'user');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -24,10 +22,6 @@ export async function PUT(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertActionAccess(client, auth, actionId);
-      if (!access.ok) return access.response;
-
       const currentActionQuery = await client.query(`
         SELECT a.*, f.work_order_id, wo.work_order_date
         FROM actions a
@@ -95,7 +89,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireRoleAtLeast(request, 'incharge');
+  const auth = requireRoleAtLeast(request, 'admin');
   if (auth instanceof NextResponse) return auth;
   try {
     const { id } = await params;
@@ -108,10 +102,6 @@ export async function DELETE(
     }
     const client = await pool.connect();
     try {
-      await ensureSectionSchema(client);
-      const access = await assertActionAccess(client, auth, actionId);
-      if (!access.ok) return access.response;
-
       const result = await client.query(
         'DELETE FROM actions WHERE id = $1 RETURNING id',
         [actionId]
